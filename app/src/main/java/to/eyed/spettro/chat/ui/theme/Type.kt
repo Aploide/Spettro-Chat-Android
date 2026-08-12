@@ -67,23 +67,6 @@ val Typography = Typography(
     ),
 )
 
-// Uppercase mono eyebrow labels (tracking 0.2em-0.3em in the reference).
-val EyebrowMono = TextStyle(
-    fontFamily = FontFamily.Monospace,
-    fontWeight = FontWeight.Normal,
-    fontSize = 9.sp,
-    lineHeight = 12.sp,
-    letterSpacing = 0.25.em,
-)
-
-val MonoMeta = TextStyle(
-    fontFamily = FontFamily.Monospace,
-    fontWeight = FontWeight.Normal,
-    fontSize = 10.sp,
-    lineHeight = 14.sp,
-    letterSpacing = 0.1.em,
-)
-
 val MonoBody = TextStyle(
     fontFamily = FontFamily.Monospace,
     fontSize = 13.sp,

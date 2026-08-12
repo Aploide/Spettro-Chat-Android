@@ -34,8 +34,7 @@ import to.eyed.spettro.chat.data.api.Account
 import to.eyed.spettro.chat.ui.components.GlassButton
 import to.eyed.spettro.chat.ui.components.GlassToggle
 import to.eyed.spettro.chat.ui.components.Hairline
-import to.eyed.spettro.chat.ui.components.glass
-import to.eyed.spettro.chat.ui.theme.EyebrowMono
+import to.eyed.spettro.chat.ui.components.surfaceHigh
 import to.eyed.spettro.chat.ui.theme.Ink
 import to.eyed.spettro.chat.ui.theme.Radii
 import to.eyed.spettro.chat.ui.theme.whiteA
@@ -62,7 +61,7 @@ fun SettingsSheet(
     var tab by remember { mutableStateOf(0) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = Ink.I900,
+        containerColor = Ink.SurfaceLow,
         contentColor = Ink.I100,
         dragHandle = null,
         shape = RoundedCornerShape(topStart = Radii.sheet, topEnd = Radii.sheet),
@@ -90,7 +89,7 @@ fun SettingsSheet(
                     Box(
                         Modifier
                             .clip(RoundedCornerShape(Radii.control))
-                            .background(if (active) whiteA(0.10f) else Color.Transparent)
+                            .background(if (active) Ink.SurfaceHigh else Color.Transparent)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
@@ -133,10 +132,15 @@ fun SettingsSheet(
                             Box(
                                 Modifier
                                     .clip(RoundedCornerShape(999.dp))
-                                    .background(whiteA(0.10f))
-                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                                    .background(Ink.SurfaceHigh)
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
                             ) {
-                                Text("${plan.ifBlank { "free" }.uppercase()} PLAN", style = EyebrowMono, color = Ink.I300)
+                                Text(
+                                    "${plan.ifBlank { "free" }.replaceFirstChar { it.uppercase() }} plan",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Ink.I300,
+                                )
                             }
                         }
                         if (account != null && account.creditLimit > 0) {
@@ -225,7 +229,7 @@ private fun RowDivider() {
 
 @Composable
 private fun MiniPill(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    Row(Modifier.glass(RoundedCornerShape(Radii.control)).padding(2.dp)) {
+    Row(Modifier.surfaceHigh(RoundedCornerShape(Radii.control)).padding(2.dp)) {
         options.forEachIndexed { i, label ->
             val active = i == selected
             Box(

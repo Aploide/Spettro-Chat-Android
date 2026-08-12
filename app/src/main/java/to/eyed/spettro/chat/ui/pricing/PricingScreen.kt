@@ -40,12 +40,10 @@ import androidx.compose.ui.unit.sp
 import to.eyed.spettro.chat.ui.components.GhostIconButton
 import to.eyed.spettro.chat.ui.components.PrimaryButton
 import to.eyed.spettro.chat.ui.components.SegmentedPill
-import to.eyed.spettro.chat.ui.components.glass
-import to.eyed.spettro.chat.ui.components.glassStrong
-import to.eyed.spettro.chat.ui.theme.EyebrowMono
+import to.eyed.spettro.chat.ui.components.surfaceCard
+import to.eyed.spettro.chat.ui.components.surfaceHigh
 import to.eyed.spettro.chat.ui.theme.Ink
 import to.eyed.spettro.chat.ui.theme.Radii
-import to.eyed.spettro.chat.ui.theme.whiteA
 
 private data class Tier(
     val name: String,
@@ -78,13 +76,13 @@ fun PricingScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(Ink.Pitch)
+            .background(androidx.compose.material3.MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("PRICING", style = EyebrowMono, color = Ink.I500)
+            Text("Pricing", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Ink.I500)
             Spacer(Modifier.weight(1f))
             GhostIconButton(Icons.Rounded.Close, "Close", onClose)
         }
@@ -104,9 +102,9 @@ fun PricingScreen(
             )
             Spacer(Modifier.width(8.dp))
             Box(
-                Modifier.clip(CircleShape).background(whiteA(0.10f)).padding(horizontal = 6.dp, vertical = 3.dp),
+                Modifier.clip(CircleShape).background(Ink.SurfaceHigh).padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
-                Text("−17%", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Ink.I300)
+                Text("−17%", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Ink.I300)
             }
         }
         Spacer(Modifier.height(20.dp))
@@ -141,8 +139,8 @@ private fun TierCard(tier: Tier, yearly: Boolean, isCurrent: Boolean, onUpgrade:
                 .fillMaxWidth()
                 .padding(top = 12.dp)
                 .then(
-                    if (tier.highlight) Modifier.glassStrong(shape, refraction = true)
-                    else Modifier.glass(shape),
+                    if (tier.highlight) Modifier.surfaceCard(shape, fill = Ink.Surface)
+                    else Modifier.surfaceCard(shape),
                 )
                 .padding(24.dp),
         ) {
@@ -157,9 +155,9 @@ private fun TierCard(tier: Tier, yearly: Boolean, isCurrent: Boolean, onUpgrade:
                 if (isCurrent) {
                     Spacer(Modifier.width(8.dp))
                     Box(
-                        Modifier.clip(CircleShape).background(whiteA(0.10f)).padding(horizontal = 8.dp, vertical = 2.dp),
+                        Modifier.clip(CircleShape).background(Ink.SurfaceHigh).padding(horizontal = 10.dp, vertical = 3.dp),
                     ) {
-                        Text("CURRENT", style = EyebrowMono, color = Ink.I300)
+                        Text("Current", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Ink.I300)
                     }
                 }
             }
@@ -188,7 +186,7 @@ private fun TierCard(tier: Tier, yearly: Boolean, isCurrent: Boolean, onUpgrade:
                         Modifier
                             .size(16.dp)
                             .clip(CircleShape)
-                            .background(whiteA(0.10f)),
+                            .background(Ink.SurfaceHigh),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(Icons.Rounded.Check, null, Modifier.size(9.dp), tint = Ink.White)
@@ -208,7 +206,7 @@ private fun TierCard(tier: Tier, yearly: Boolean, isCurrent: Boolean, onUpgrade:
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .glass(RoundedCornerShape(Radii.row))
+                        .surfaceHigh(RoundedCornerShape(999.dp))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,

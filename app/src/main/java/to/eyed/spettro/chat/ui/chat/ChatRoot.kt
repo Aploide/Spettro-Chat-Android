@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import to.eyed.spettro.chat.data.api.SpettroApi
-import to.eyed.spettro.chat.ui.components.glassOverlay
+import to.eyed.spettro.chat.ui.components.surfaceCard
 import to.eyed.spettro.chat.ui.pricing.PricingScreen
 import to.eyed.spettro.chat.ui.settings.SettingsSheet
 import to.eyed.spettro.chat.ui.theme.Ink
@@ -72,10 +72,12 @@ fun ChatRoot(
     var showPricing by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
-    // Follow the stream: keep the newest content visible.
+    // Follow the stream: keep the tail of the newest content visible, but
+    // don't fight the user while they're scrolling back.
     LaunchedEffect(messages.size, stream) {
+        if (listState.isScrollInProgress) return@LaunchedEffect
         val count = listState.layoutInfo.totalItemsCount
-        if (count > 0) listState.animateScrollToItem(count - 1)
+        if (count > 0) listState.scrollToItem(count - 1, scrollOffset = 1_000_000)
     }
 
     ModalNavigationDrawer(
@@ -128,11 +130,15 @@ fun ChatRoot(
                 onManageSubscription = { showPricing = true },
                 onSignOut = { appVm.signOut() },
             )
+            val streamingAnimationsOn by appVm.streamingAnimations.collectAsState()
+            val hapticsOn by appVm.hapticFeedback.collectAsState()
+            val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
             Box(Modifier.weight(1f)) {
                 MessagesList(
                     messages = messages,
                     stream = stream,
                     listState = listState,
+                    animations = streamingAnimationsOn,
                     onRegenerate = { chatVm.regenerate(selectedModel, thinking) },
                     onSuggestion = { input = it },
                     modifier = Modifier.fillMaxSize(),
@@ -142,6 +148,11 @@ fun ChatRoot(
                         value = input,
                         onValueChange = { input = it },
                         onSend = {
+                            if (hapticsOn) {
+                                haptics.performHapticFeedback(
+                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                                )
+                            }
                             chatVm.send(input, selectedModel, thinking)
                             input = ""
                         },
@@ -159,7 +170,7 @@ fun ChatRoot(
                         Modifier
                             .align(Alignment.TopCenter)
                             .padding(16.dp)
-                            .glassOverlay(RoundedCornerShape(Radii.row))
+                            .surfaceCard(RoundedCornerShape(Radii.row), fill = Ink.Surface)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
@@ -204,7 +215,7 @@ fun ChatRoot(
     }
 
     if (showPricing) {
-        Box(Modifier.fillMaxSize().background(Ink.Pitch)) {
+        Box(Modifier.fillMaxSize().background(androidx.compose.material3.MaterialTheme.colorScheme.background)) {
             PricingScreen(
                 currentPlan = plan,
                 onUpgrade = { onOpenUrl(SpettroApi.PRICING_URL) },

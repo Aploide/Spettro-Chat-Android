@@ -127,8 +127,9 @@ private fun MonoCodeBlock(code: String, language: String?) {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
             Text(
-                text = (language?.takeIf { it.isNotBlank() } ?: "text").uppercase(),
-                style = to.eyed.spettro.chat.ui.theme.EyebrowMono,
+                text = language?.takeIf { it.isNotBlank() } ?: "text",
+                fontSize = 11.sp,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                 color = Ink.I500,
             )
         }

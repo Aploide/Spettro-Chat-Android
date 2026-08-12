@@ -19,6 +19,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -46,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -54,17 +56,11 @@ import androidx.compose.ui.unit.sp
 import to.eyed.spettro.chat.data.store.StoredMessage
 import to.eyed.spettro.chat.ui.components.GhostIconButton
 import to.eyed.spettro.chat.ui.components.LiquidMark
-import to.eyed.spettro.chat.ui.components.LiquidThinking
-import to.eyed.spettro.chat.ui.components.glass
-import to.eyed.spettro.chat.ui.components.glassStrong
-import to.eyed.spettro.chat.ui.theme.EyebrowMono
+import to.eyed.spettro.chat.ui.components.surfaceHigh
+import to.eyed.spettro.chat.ui.components.surfaceLow
 import to.eyed.spettro.chat.ui.theme.Ink
 import to.eyed.spettro.chat.ui.theme.Radii
-import to.eyed.spettro.chat.ui.theme.whiteA
 import to.eyed.spettro.chat.vm.StreamState
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 private fun copyToClipboard(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -76,6 +72,7 @@ fun MessagesList(
     messages: List<StoredMessage>,
     stream: StreamState,
     listState: LazyListState,
+    animations: Boolean,
     onRegenerate: () -> Unit,
     onSuggestion: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -87,12 +84,9 @@ fun MessagesList(
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxWidth(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = 16.dp, end = 16.dp, top = 16.dp, bottom = 140.dp,
-        ),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 140.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        item(key = "date") { DateChip(messages.firstOrNull()?.at) }
         items(messages.size, key = { i -> "$i-${messages[i].at}" }) { i ->
             val msg = messages[i]
             val isLast = i == messages.size - 1
@@ -110,7 +104,7 @@ fun MessagesList(
         }
         when (stream) {
             is StreamState.Thinking -> item(key = "thinking") {
-                ThinkingIndicator(stream.reasoning)
+                ThinkingIndicator(stream.reasoning, animations)
             }
             is StreamState.Streaming -> item(key = "streaming") {
                 AssistantMessage(
@@ -119,6 +113,7 @@ fun MessagesList(
                     streaming = true,
                     showActions = false,
                     onRegenerate = {},
+                    animations = animations,
                 )
             }
             is StreamState.RateLimited -> item(key = "ratelimited") {
@@ -130,41 +125,16 @@ fun MessagesList(
 }
 
 @Composable
-private fun DateChip(firstAt: Long?) {
-    val label = remember(firstAt) {
-        val fmt = SimpleDateFormat("MMM d · HH:mm", Locale.getDefault())
-        fmt.format(Date(firstAt ?: System.currentTimeMillis()))
-    }
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Box(Modifier.glass(CircleShape).padding(horizontal = 16.dp, vertical = 6.dp)) {
-            Text(label.uppercase(), style = EyebrowMono, color = Ink.I500)
-        }
-    }
-}
-
-@Composable
 private fun UserBubble(msg: StoredMessage) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
         Box(
             Modifier
-                .widthIn(max = 320.dp)
-                .glassStrong(
-                    RoundedCornerShape(
-                        topStart = Radii.card, topEnd = Radii.card,
-                        bottomStart = Radii.card, bottomEnd = 8.dp,
-                    ),
-                    refraction = true,
-                )
-                .padding(horizontal = 20.dp, vertical = 14.dp),
+                .widthIn(max = 300.dp)
+                .surfaceHigh(RoundedCornerShape(Radii.card))
+                .padding(horizontal = 18.dp, vertical = 12.dp),
         ) {
             Text(msg.content, color = Ink.White, fontSize = 15.sp, lineHeight = 22.sp)
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            remember(msg.at) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.at)) },
-            style = EyebrowMono,
-            color = Ink.I500,
-        )
     }
 }
 
@@ -175,128 +145,118 @@ private fun AssistantMessage(
     streaming: Boolean,
     showActions: Boolean,
     onRegenerate: () -> Unit,
+    animations: Boolean = true,
 ) {
     val context = LocalContext.current
-    Row(Modifier.fillMaxWidth()) {
-        Box(
-            Modifier.size(32.dp).glass(CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            LiquidMark(10.dp)
+    Column(Modifier.fillMaxWidth()) {
+        if (reasoning.isNotBlank()) {
+            ReasoningPanel(reasoning, live = streaming && text.isBlank())
+            Spacer(Modifier.height(10.dp))
         }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            if (reasoning.isNotBlank()) {
-                ReasoningPanel(reasoning, live = streaming && text.isBlank())
-                Spacer(Modifier.height(8.dp))
-            }
-            MarkdownBody(text)
-            if (streaming) {
-                Spacer(Modifier.height(4.dp))
-                BlinkingCaret()
-            }
-            AnimatedVisibility(showActions, enter = fadeIn(tween(200)), exit = fadeOut(tween(150))) {
-                Row(Modifier.padding(top = 4.dp)) {
-                    GhostIconButton(
-                        Icons.Rounded.ContentCopy,
-                        "Copy message",
-                        onClick = { copyToClipboard(context, text) },
-                        size = 30.dp,
-                        iconSize = 13.dp,
-                    )
-                    GhostIconButton(
-                        Icons.Rounded.Refresh,
-                        "Regenerate",
-                        onClick = onRegenerate,
-                        size = 30.dp,
-                        iconSize = 13.dp,
-                    )
-                }
-            }
+        MarkdownBody(text)
+        if (streaming && text.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            BlinkingCaret(animations)
         }
-    }
-}
-
-/** Collapsible reasoning ("Deep Thought") panel above the answer. */
-@Composable
-private fun ReasoningPanel(reasoning: String, live: Boolean) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .glass(RoundedCornerShape(Radii.row))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) { expanded = !expanded }
-            .padding(12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (live) "Reasoning" else "Reasoned",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = Ink.I300,
-            )
-            if (live) {
-                Spacer(Modifier.width(6.dp))
-                PulsingDots()
-            }
-            Spacer(Modifier.weight(1f))
-            Icon(
-                if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                null,
-                Modifier.size(14.dp),
-                tint = Ink.I500,
-            )
-        }
-        AnimatedVisibility(expanded || live, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-            Text(
-                if (live) reasoning.takeLast(600) else reasoning,
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                color = Ink.I500,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun ThinkingIndicator(reasoning: String) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        LiquidThinking(size = 48.dp)
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text("Thinking", fontSize = 14.sp, color = Ink.I100)
-            Spacer(Modifier.height(2.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Reasoning", fontSize = 12.sp, color = Ink.I500)
-                Spacer(Modifier.width(6.dp))
-                PulsingDots()
-            }
-            if (reasoning.isNotBlank()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    reasoning.takeLast(300),
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                    color = Ink.I500,
-                    maxLines = 4,
+        AnimatedVisibility(showActions, enter = fadeIn(tween(200)), exit = fadeOut(tween(150))) {
+            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                GhostIconButton(
+                    Icons.Rounded.ContentCopy,
+                    "Copy message",
+                    onClick = { copyToClipboard(context, text) },
+                    size = 32.dp,
+                    iconSize = 15.dp,
+                    tint = Ink.I500,
+                )
+                GhostIconButton(
+                    Icons.Rounded.Refresh,
+                    "Regenerate",
+                    onClick = onRegenerate,
+                    size = 32.dp,
+                    iconSize = 15.dp,
+                    tint = Ink.I500,
                 )
             }
         }
     }
 }
 
+/** Collapsible reasoning panel above the answer, quiet and flat. */
 @Composable
-private fun PulsingDots() {
+private fun ReasoningPanel(reasoning: String, live: Boolean) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .surfaceLow(RoundedCornerShape(Radii.row))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { expanded = !expanded }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (live) "Thinking" else "Thought for a moment",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = Ink.I300,
+            )
+            if (live) {
+                Spacer(Modifier.width(8.dp))
+                PulsingDots(true)
+            }
+            Spacer(Modifier.weight(1f))
+            Icon(
+                if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                null,
+                Modifier.size(16.dp),
+                tint = Ink.I500,
+            )
+        }
+        AnimatedVisibility(expanded || live, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            Text(
+                if (live) reasoning.takeLast(600) else reasoning,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                color = Ink.I500,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+        }
+    }
+}
+
+/** ChatGPT-style pulsing dot while waiting for the first token. */
+@Composable
+private fun ThinkingIndicator(reasoning: String, animations: Boolean) {
+    if (reasoning.isNotBlank()) {
+        ReasoningPanel(reasoning, live = true)
+        return
+    }
+    val t = rememberInfiniteTransition(label = "pulse")
+    val scale by t.animateFloat(
+        initialValue = if (animations) 0.85f else 1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+        label = "pulseScale",
+    )
+    Box(
+        Modifier
+            .padding(vertical = 6.dp)
+            .size(14.dp)
+            .scale(scale)
+            .background(Ink.White, CircleShape),
+    )
+}
+
+@Composable
+private fun PulsingDots(animations: Boolean) {
     val t = rememberInfiniteTransition(label = "dots")
     Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
         repeat(3) { i ->
             val alpha by t.animateFloat(
-                initialValue = 0.2f,
-                targetValue = 1f,
+                initialValue = if (animations) 0.2f else 0.7f,
+                targetValue = if (animations) 1f else 0.7f,
                 animationSpec = infiniteRepeatable(
                     tween(600, delayMillis = i * 200),
                     RepeatMode.Reverse,
@@ -309,11 +269,11 @@ private fun PulsingDots() {
 }
 
 @Composable
-private fun BlinkingCaret() {
+private fun BlinkingCaret(animations: Boolean) {
     val t = rememberInfiniteTransition(label = "caret")
     val alpha by t.animateFloat(
         initialValue = 1f,
-        targetValue = 0.2f,
+        targetValue = if (animations) 0.2f else 1f,
         animationSpec = infiniteRepeatable(tween(450), RepeatMode.Reverse),
         label = "caretAlpha",
     )
@@ -328,10 +288,14 @@ private fun BlinkingCaret() {
 @Composable
 private fun RateLimitNotice(seconds: Int) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Box(Modifier.glass(CircleShape).padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Box(
+            Modifier
+                .surfaceLow(CircleShape)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
             Text(
                 "Waiting out a rate limit — retrying in ${seconds}s",
-                style = EyebrowMono,
+                fontSize = 12.sp,
                 color = Ink.I300,
             )
         }
@@ -345,34 +309,32 @@ private fun EmptyState(onSuggestion: (String) -> Unit, modifier: Modifier = Modi
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Box(
-            Modifier.size(56.dp).glass(RoundedCornerShape(Radii.card)),
-            contentAlignment = Alignment.Center,
-        ) {
-            LiquidMark(16.dp)
-        }
-        Spacer(Modifier.height(16.dp))
-        Text("Where should we begin?", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Ink.White)
-        Spacer(Modifier.height(6.dp))
+        LiquidMark(28.dp)
+        Spacer(Modifier.height(20.dp))
+        Text("Where should we begin?", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Ink.White)
+        Spacer(Modifier.height(8.dp))
         Text(
             "Ask anything. Think out loud.",
-            fontSize = 12.sp,
+            fontSize = 14.sp,
             color = Ink.I500,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(20.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Spacer(Modifier.height(24.dp))
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             listOf("Explain a concept", "Draft a spec", "Review my code").forEach { s ->
                 Box(
                     Modifier
-                        .glass(CircleShape)
+                        .surfaceLow(CircleShape)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                         ) { onSuggestion(s) }
-                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                        .padding(horizontal = 14.dp, vertical = 9.dp),
                 ) {
-                    Text(s, fontSize = 11.sp, color = Ink.I100)
+                    Text(s, fontSize = 13.sp, color = Ink.I100)
                 }
             }
         }

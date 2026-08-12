@@ -1,7 +1,6 @@
 package to.eyed.spettro.chat.ui.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -46,7 +45,7 @@ import to.eyed.spettro.chat.ui.theme.whiteA
 fun <T> snappySpring() = spring<T>(dampingRatio = 1f, stiffness = 400f)
 fun <T> softSpring() = spring<T>(dampingRatio = 0.95f, stiffness = 260f)
 
-/** 36x36 ghost icon button: transparent at rest, glass on press. */
+/** Circular ghost icon button: transparent at rest, subtle fill on press. */
 @Composable
 fun GhostIconButton(
     icon: ImageVector,
@@ -54,28 +53,27 @@ fun GhostIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 36.dp,
-    iconSize: Dp = 16.dp,
-    tint: Color = Ink.I500,
+    iconSize: Dp = 17.dp,
+    tint: Color = Ink.I300,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.92f else 1f, snappySpring(), label = "scale")
-    val bg by animateColorAsState(if (pressed) whiteA(0.06f) else Color.Transparent, tween(200), label = "bg")
-    val color by animateColorAsState(if (pressed) Color.White else tint, tween(200), label = "tint")
+    val bg by animateColorAsState(if (pressed) Ink.SurfaceHigh else Color.Transparent, tween(150), label = "bg")
     Box(
         modifier
             .size(size)
             .scale(scale)
-            .clip(RoundedCornerShape(Radii.control))
+            .clip(CircleShape)
             .background(bg)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription, Modifier.size(iconSize), tint = color)
+        Icon(icon, contentDescription, Modifier.size(iconSize), tint = tint)
     }
 }
 
-/** Full-width white primary CTA. */
+/** Full-width white pill CTA. */
 @Composable
 fun PrimaryButton(
     text: String,
@@ -87,22 +85,20 @@ fun PrimaryButton(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.97f else 1f, snappySpring(), label = "scale")
-    val shape = RoundedCornerShape(Radii.row)
     Row(
         modifier
             .scale(scale)
-            .then(if (enabled) Modifier.whiteGlow(shape) else Modifier)
-            .clip(shape)
-            .background(if (enabled) Color.White else whiteA(0.06f))
+            .clip(CircleShape)
+            .background(if (enabled) Color.White else Ink.SurfaceLow)
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
-            .padding(vertical = 14.dp, horizontal = 20.dp),
+            .padding(vertical = 15.dp, horizontal = 20.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text,
             color = if (enabled) Ink.Pitch else whiteA(0.25f),
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
         )
@@ -110,7 +106,7 @@ fun PrimaryButton(
     }
 }
 
-/** Secondary glass button. */
+/** Secondary flat pill button. */
 @Composable
 fun GlassButton(
     text: String,
@@ -124,28 +120,27 @@ fun GlassButton(
     Box(
         modifier
             .scale(scale)
-            .glass(RoundedCornerShape(Radii.control))
+            .clip(CircleShape)
+            .background(Ink.SurfaceHigh)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 9.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, color = textColor, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+        Text(text, color = textColor, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
 }
 
 /** The 44x24 monochrome toggle. */
 @Composable
 fun GlassToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
-    val trackBg by animateColorAsState(if (checked) whiteA(0.25f) else whiteA(0.06f), tween(300), label = "track")
-    val trackBorder by animateColorAsState(if (checked) whiteA(0.40f) else whiteA(0.15f), tween(300), label = "border")
-    val knobColor by animateColorAsState(if (checked) Color.White else Ink.I500, tween(300), label = "knob")
-    val knobX by animateDpAsState(if (checked) 22.dp else 2.dp, snappySpring(), label = "x")
+    val trackBg by animateColorAsState(if (checked) Ink.White else Ink.SurfaceHigh, tween(250), label = "track")
+    val knobColor by animateColorAsState(if (checked) Ink.Pitch else Ink.I500, tween(250), label = "knob")
+    val knobX by animateDpAsState(if (checked) 22.dp else 3.dp, snappySpring(), label = "x")
     Box(
         modifier
             .size(width = 44.dp, height = 24.dp)
             .clip(CircleShape)
             .background(trackBg)
-            .border(1.dp, trackBorder, CircleShape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -153,9 +148,8 @@ fun GlassToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: 
     ) {
         Box(
             Modifier
-                .offset(x = knobX, y = 2.dp)
+                .offset(x = knobX, y = 3.dp)
                 .size(18.dp)
-                .then(if (checked) Modifier.whiteGlow(CircleShape) else Modifier)
                 .clip(CircleShape)
                 .background(knobColor),
         )
@@ -172,7 +166,7 @@ fun SegmentedPill(
 ) {
     Row(
         modifier
-            .glass(RoundedCornerShape(Radii.row))
+            .surfaceLow(CircleShape)
             .padding(4.dp),
     ) {
         options.forEachIndexed { i, label ->
@@ -190,8 +184,7 @@ fun SegmentedPill(
             Box(
                 Modifier
                     .weight(1f)
-                    .then(if (active) Modifier.whiteGlow(RoundedCornerShape(Radii.control)) else Modifier)
-                    .clip(RoundedCornerShape(Radii.control))
+                    .clip(CircleShape)
                     .background(bg)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
@@ -206,7 +199,7 @@ fun SegmentedPill(
     }
 }
 
-/** Small hairline divider. */
+/** Hairline divider. */
 @Composable
 fun Hairline(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().height(1.dp).background(whiteA(0.08f)))
