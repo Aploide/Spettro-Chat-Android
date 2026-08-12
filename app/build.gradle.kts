@@ -6,11 +6,7 @@ plugins {
 
 android {
     namespace = "to.eyed.spettro.chat"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "to.eyed.spettro.chat"

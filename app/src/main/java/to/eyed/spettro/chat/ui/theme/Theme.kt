@@ -59,12 +59,14 @@ private val SpettroShapes = Shapes(
 )
 
 @Composable
-fun SpettroChatTheme(content: @Composable () -> Unit) {
+fun SpettroChatTheme(charcoal: Boolean = false, content: @Composable () -> Unit) {
+    // "Pitch is pure #000. Charcoal lifts surfaces to #0a0a0a."
+    val canvas = if (charcoal) Ink.I900 else Ink.Pitch
     MaterialTheme(
-        colorScheme = MonochromeScheme,
+        colorScheme = MonochromeScheme.copy(background = canvas, surface = canvas),
         typography = Typography,
         shapes = SpettroShapes,
     ) {
-        Surface(color = Ink.Pitch, contentColor = Ink.I100, content = content)
+        Surface(color = canvas, contentColor = Ink.I100, content = content)
     }
 }

@@ -131,7 +131,21 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         )
         _activeId.value = conv.id
         upsert(conv)
+        startStream(conv, model, thinking)
+    }
 
+    /** Drops the trailing assistant reply and re-runs the last user turn. */
+    fun regenerate(model: ModelInfo?, thinking: ThinkingLevel) {
+        if (model == null || sendJob?.isActive == true) return
+        val conv = activeConversation ?: return
+        val trimmedMsgs = conv.messages.dropLastWhile { it.role == "assistant" }
+        if (trimmedMsgs.isEmpty()) return
+        val updated = conv.copy(messages = trimmedMsgs, updatedAt = System.currentTimeMillis())
+        upsert(updated)
+        startStream(updated, model, thinking)
+    }
+
+    private fun startStream(conv: Conversation, model: ModelInfo, thinking: ThinkingLevel) {
         val history = conv.messages.map { OutgoingMessage(role = it.role, text = it.content) }
         // Only reasoning-capable models accept reasoning_effort.
         val effort = if (model.reasoning) thinking.effort else null
