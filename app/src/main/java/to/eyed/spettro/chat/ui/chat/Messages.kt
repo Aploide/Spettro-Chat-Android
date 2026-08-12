@@ -110,6 +110,13 @@ fun MessagesList(
             is StreamState.RateLimited -> item(key = "ratelimited") {
                 RateLimitNotice(stream.retryAfterSeconds)
             }
+            is StreamState.Compacting -> item(key = "compacting") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ThinkingIndicator("", animations)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Compacting conversation…", fontSize = 14.sp, color = Ink.I300)
+                }
+            }
             else -> Unit
         }
         items(messages.size, key = { idx -> "${messages.size - 1 - idx}-${messages[messages.size - 1 - idx].at}" }) { idx ->

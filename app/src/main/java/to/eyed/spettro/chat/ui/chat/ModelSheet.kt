@@ -1,5 +1,6 @@
 package to.eyed.spettro.chat.ui.chat
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,6 +12,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,6 +35,7 @@ fun ModelSheet(
     onSelectModel: (String) -> Unit,
     thinking: ThinkingLevel,
     onSelectThinking: (ThinkingLevel) -> Unit,
+    chatHasImages: Boolean,
     onDismiss: () -> Unit,
 ) {
     val selected = models.firstOrNull { it.id == selectedModelId }
@@ -59,16 +62,25 @@ fun ModelSheet(
                 )
             }
             models.forEach { m ->
-                MenuRow(
-                    title = modelDisplayName(m.id),
-                    subtitle = buildString {
-                        if (m.contextWindow > 0) append("${m.contextWindow / 1000}k context")
-                        if (m.reasoning) append(" · reasoning")
-                        if (m.vision) append(" · vision")
-                    }.trim(' ', '·'),
-                    selected = m.id == selectedModelId,
-                    onClick = { onSelectModel(m.id) },
-                )
+                // A chat that already contains images can only run on
+                // vision-capable models.
+                val blocked = chatHasImages && !m.vision
+                Box(Modifier.alpha(if (blocked) 0.4f else 1f)) {
+                    MenuRow(
+                        title = modelDisplayName(m.id),
+                        subtitle = if (blocked) {
+                            "Unavailable — this chat contains images"
+                        } else {
+                            buildString {
+                                if (m.contextWindow > 0) append("${m.contextWindow / 1000}k context")
+                                if (m.reasoning) append(" · reasoning")
+                                if (m.vision) append(" · vision")
+                            }.trim(' ', '·')
+                        },
+                        selected = m.id == selectedModelId,
+                        onClick = { if (!blocked) onSelectModel(m.id) },
+                    )
+                }
             }
 
             if (selected?.reasoning == true) {

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -162,33 +163,46 @@ fun ChatRoot(
                     onSuggestion = { input = it },
                     modifier = Modifier.fillMaxSize(),
                 )
+                // Near the model's context ceiling the composer is replaced
+                // by a hard stop: compact the chat or start a new one.
+                val nearLimit = selectedModel != null && stream is StreamState.Idle &&
+                    to.eyed.spettro.chat.vm.ContextEstimator.isNearLimit(messages, selectedModel.contextWindow)
                 Box(Modifier.align(Alignment.BottomCenter)) {
-                    InputBar(
-                        value = input,
-                        onValueChange = { input = it },
-                        attachments = attachments,
-                        onAddImage = {
-                            photoPicker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                            )
-                        },
-                        onRemoveImage = { i ->
-                            attachments = attachments.filterIndexed { idx, _ -> idx != i }
-                        },
-                        canAttach = selectedModel?.vision == true,
-                        onSend = {
-                            if (hapticsOn) {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            }
-                            chatVm.send(input, attachments.map { it.dataUrl }, selectedModel, thinking)
-                            input = ""
-                            attachments = emptyList()
-                        },
-                        onStop = chatVm::stopStreaming,
-                        isStreaming = stream is StreamState.Thinking ||
-                            stream is StreamState.Streaming ||
-                            stream is StreamState.RateLimited,
-                    )
+                    if (nearLimit) {
+                        ContextLimitPanel(
+                            modelName = modelDisplayName(selectedModel!!.id),
+                            onCompact = { chatVm.compact(selectedModel) },
+                            onNewChat = { chatVm.newChat() },
+                        )
+                    } else {
+                        InputBar(
+                            value = input,
+                            onValueChange = { input = it },
+                            attachments = attachments,
+                            onAddImage = {
+                                photoPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                )
+                            },
+                            onRemoveImage = { i ->
+                                attachments = attachments.filterIndexed { idx, _ -> idx != i }
+                            },
+                            canAttach = selectedModel?.vision == true,
+                            onSend = {
+                                if (hapticsOn) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                                chatVm.send(input, attachments.map { it.dataUrl }, selectedModel, thinking)
+                                input = ""
+                                attachments = emptyList()
+                            },
+                            onStop = chatVm::stopStreaming,
+                            isStreaming = stream is StreamState.Thinking ||
+                                stream is StreamState.Streaming ||
+                                stream is StreamState.RateLimited ||
+                                stream is StreamState.Compacting,
+                        )
+                    }
                 }
 
                 // Error notice
@@ -222,6 +236,7 @@ fun ChatRoot(
             onSelectModel = appVm::selectModel,
             thinking = thinking,
             onSelectThinking = appVm::setThinkingLevel,
+            chatHasImages = messages.any { it.images.isNotEmpty() },
             onDismiss = { showModelSheet = false },
         )
     }
@@ -260,6 +275,56 @@ fun ChatRoot(
                 onUpgrade = { onOpenUrl(SpettroApi.PRICING_URL) },
                 onClose = { showPricing = false },
             )
+        }
+    }
+}
+
+/**
+ * Hard stop shown instead of the composer when the conversation is close to
+ * the selected model's context window.
+ */
+@Composable
+private fun ContextLimitPanel(
+    modelName: String,
+    onCompact: () -> Unit,
+    onNewChat: () -> Unit,
+) {
+    val canvas = MaterialTheme.colorScheme.background
+    Column(Modifier.fillMaxWidth().background(canvas).padding(12.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .surfaceCard(RoundedCornerShape(Radii.card), fill = Ink.Surface)
+                .padding(20.dp),
+        ) {
+            Text(
+                "Context limit almost reached",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Ink.White,
+            )
+            Spacer(Modifier.padding(top = 4.dp))
+            Text(
+                "This chat is close to $modelName's context window, so new messages are paused. " +
+                    "Compact the conversation into a summary, or start a new chat.",
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = Ink.I500,
+            )
+            Spacer(Modifier.padding(top = 10.dp))
+            Row {
+                to.eyed.spettro.chat.ui.components.PrimaryButton(
+                    text = "Compact chat",
+                    onClick = onCompact,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(10.dp))
+                to.eyed.spettro.chat.ui.components.GlassButton(
+                    text = "New chat",
+                    onClick = onNewChat,
+                    modifier = Modifier.align(Alignment.CenterVertically),
+                )
+            }
         }
     }
 }

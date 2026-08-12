@@ -22,7 +22,36 @@ sealed interface StreamState {
     data class Thinking(val reasoning: String = "") : StreamState
     data class Streaming(val text: String, val reasoning: String) : StreamState
     data class RateLimited(val retryAfterSeconds: Int) : StreamState
+    /** The conversation is being summarized to free up context. */
+    data object Compacting : StreamState
     data class Error(val message: String) : StreamState
+}
+
+/**
+ * Rough context accounting so the app can stop a chat before it overflows
+ * the model's window: ~4 chars per token for text, a flat estimate per
+ * attached image.
+ */
+object ContextEstimator {
+    private const val CHARS_PER_TOKEN = 4
+    private const val TOKENS_PER_IMAGE = 1600
+    private const val RESERVED_FOR_REPLY = 0.15f
+
+    /** Block sending once the history uses this share of the window. */
+    const val BLOCK_RATIO = 0.85f
+
+    fun estimateTokens(messages: List<StoredMessage>): Int = messages.sumOf {
+        (it.content.length + it.thinking.length) / CHARS_PER_TOKEN + it.images.size * TOKENS_PER_IMAGE
+    }
+
+    /** Used share of the model's window; 0 when the window is unknown. */
+    fun usedRatio(messages: List<StoredMessage>, contextWindow: Int): Float {
+        if (contextWindow <= 0) return 0f
+        return estimateTokens(messages).toFloat() / contextWindow
+    }
+
+    fun isNearLimit(messages: List<StoredMessage>, contextWindow: Int): Boolean =
+        usedRatio(messages, contextWindow) >= BLOCK_RATIO
 }
 
 class ChatViewModel(private val container: AppContainer) : ViewModel() {
@@ -107,11 +136,31 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         if (_stream.value is StreamState.Error) _stream.value = StreamState.Idle
     }
 
+    /** True when any message in the active conversation carries images. */
+    fun activeChatHasImages(): Boolean =
+        activeConversation?.messages?.any { it.images.isNotEmpty() } == true
+
     fun send(text: String, images: List<String>, model: ModelInfo?, thinking: ThinkingLevel) {
         val trimmed = text.trim()
         if ((trimmed.isEmpty() && images.isEmpty()) || sendJob?.isActive == true) return
         if (model == null) {
             _stream.value = StreamState.Error("Your plan has no models enabled yet.")
+            return
+        }
+        // A chat with images must stay on a vision-capable model.
+        val hasImages = images.isNotEmpty() || activeChatHasImages()
+        if (hasImages && !model.vision) {
+            _stream.value = StreamState.Error(
+                "This chat contains images. Switch to a vision-capable model to continue.",
+            )
+            return
+        }
+        // Refuse to run into the context ceiling; the UI offers compact/new chat.
+        val history = activeConversation?.messages ?: emptyList()
+        if (ContextEstimator.isNearLimit(history, model.contextWindow)) {
+            _stream.value = StreamState.Error(
+                "This chat is near the model's context limit. Compact it or start a new chat.",
+            )
             return
         }
 
@@ -131,6 +180,63 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         _activeId.value = conv.id
         upsert(conv)
         startStream(conv, model, thinking)
+    }
+
+    /**
+     * Compacts the active conversation: asks the model for a self-contained
+     * summary, then replaces the history with it. Frees context and drops
+     * image payloads.
+     */
+    fun compact(model: ModelInfo?) {
+        val conv = activeConversation ?: return
+        if (model == null || conv.messages.isEmpty() || sendJob?.isActive == true) return
+        _stream.value = StreamState.Compacting
+        sendJob = viewModelScope.launch {
+            // Images are dropped from the request: they're the bulk of the
+            // context, and non-vision models must be able to compact too.
+            val history = conv.messages.map { OutgoingMessage(role = it.role, text = it.content) } +
+                OutgoingMessage(
+                    role = "user",
+                    text = "Summarize our conversation so far into a compact brief that preserves " +
+                        "every fact, decision, constraint, code snippet, and open question needed " +
+                        "to continue seamlessly. Reply with only the summary.",
+                )
+            val acc = StringBuilder()
+            try {
+                api.chatStream(model.id, history, null).collect { event ->
+                    when (event) {
+                        is ChatEvent.Text -> acc.append(event.delta)
+                        is ChatEvent.RateLimited -> _stream.value = StreamState.RateLimited(event.retryAfterSeconds)
+                        is ChatEvent.Done -> {
+                            val summary = acc.toString().trim()
+                            if (summary.isBlank()) {
+                                _stream.value = StreamState.Error("Compacting failed — the model returned nothing.")
+                            } else {
+                                update(conv.id) {
+                                    it.copy(
+                                        messages = listOf(
+                                            StoredMessage(
+                                                role = "assistant",
+                                                content = "**Conversation compacted.** Summary of the discussion so far:\n\n$summary",
+                                                at = System.currentTimeMillis(),
+                                            ),
+                                        ),
+                                        updatedAt = System.currentTimeMillis(),
+                                    )
+                                }
+                                _stream.value = StreamState.Idle
+                            }
+                        }
+                        else -> Unit
+                    }
+                }
+            } catch (e: UnauthorizedException) {
+                _stream.value = StreamState.Idle
+                container.unauthorized.tryEmit(Unit)
+            } catch (e: Exception) {
+                _stream.value = StreamState.Error("Compacting failed: ${friendlyError(e)}")
+            }
+        }
     }
 
     /** Drops the trailing assistant reply and re-runs the last user turn. */
