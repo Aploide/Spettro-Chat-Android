@@ -1,58 +1,70 @@
 package to.eyed.spettro.chat.ui.theme
 
-import android.app.Activity
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+// Corner radii: 12 controls, 16 rows, 24 cards, 28 input bar, 32+ sheets.
+object Radii {
+    val control = 12.dp
+    val row = 16.dp
+    val card = 24.dp
+    val inputBar = 28.dp
+    val sheet = 32.dp
+}
+
+private val MonochromeScheme = darkColorScheme(
+    primary = Ink.White,
+    onPrimary = Ink.Pitch,
+    primaryContainer = whiteA(0.10f),
+    onPrimaryContainer = Ink.White,
+    secondary = Ink.I300,
+    onSecondary = Ink.Pitch,
+    secondaryContainer = whiteA(0.06f),
+    onSecondaryContainer = Ink.I100,
+    tertiary = Ink.I500,
+    onTertiary = Ink.Pitch,
+    background = Ink.Pitch,
+    onBackground = Ink.I100,
+    surface = Ink.Pitch,
+    onSurface = Ink.I100,
+    surfaceVariant = Ink.I850,
+    onSurfaceVariant = Ink.I500,
+    surfaceContainer = Ink.I900,
+    surfaceContainerLow = Ink.I900,
+    surfaceContainerHigh = Ink.I850,
+    surfaceContainerHighest = Ink.I800,
+    surfaceTint = Color.Transparent,
+    error = Ink.White,
+    onError = Ink.Pitch,
+    outline = whiteA(0.10f),
+    outlineVariant = whiteA(0.06f),
+    scrim = Color(0xB3000000),
+    inverseSurface = Ink.I100,
+    inverseOnSurface = Ink.Pitch,
+    inversePrimary = Ink.Pitch,
 )
 
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+private val SpettroShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(Radii.control),
+    medium = RoundedCornerShape(Radii.row),
+    large = RoundedCornerShape(Radii.card),
+    extraLarge = RoundedCornerShape(Radii.sheet),
 )
 
 @Composable
-fun SpettroChatTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
-    content: @Composable () -> Unit
-) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
-
+fun SpettroChatTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = MonochromeScheme,
         typography = Typography,
-        content = content
-    )
+        shapes = SpettroShapes,
+    ) {
+        Surface(color = Ink.Pitch, contentColor = Ink.I100, content = content)
+    }
 }
