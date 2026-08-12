@@ -159,7 +159,6 @@ fun ChatRoot(
                     animations = streamingAnimationsOn,
                     isTemporary = isTemporary,
                     onRegenerate = { chatVm.regenerate(selectedModel, thinking) },
-                    onSuggestion = { input = it },
                     modifier = Modifier.fillMaxSize(),
                 )
                 // Near the model's context ceiling the composer is replaced
@@ -244,17 +243,14 @@ fun ChatRoot(
     }
 
     if (showSettings) {
-        val theme by appVm.theme.collectAsState()
         val streamingAnimations by appVm.streamingAnimations.collectAsState()
         val haptics by appVm.hapticFeedback.collectAsState()
         SettingsSheet(
             account = account,
             email = email,
             plan = plan,
-            theme = theme,
             streamingAnimations = streamingAnimations,
             hapticFeedback = haptics,
-            onSetTheme = appVm::setTheme,
             onSetStreamingAnimations = appVm::setStreamingAnimations,
             onSetHapticFeedback = appVm::setHapticFeedback,
             onManageSubscription = {

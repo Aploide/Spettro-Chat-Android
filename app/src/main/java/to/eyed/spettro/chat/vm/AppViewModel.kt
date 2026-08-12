@@ -74,9 +74,6 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     private val _thinkingLevel = MutableStateFlow(ThinkingLevel.High)
     val thinkingLevel: StateFlow<ThinkingLevel> = _thinkingLevel.asStateFlow()
 
-    private val _theme = MutableStateFlow("pitch")
-    val theme: StateFlow<String> = _theme.asStateFlow()
-
     private val _streamingAnimations = MutableStateFlow(true)
     val streamingAnimations: StateFlow<Boolean> = _streamingAnimations.asStateFlow()
 
@@ -92,7 +89,6 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             _cachedPlan.value = snapshot.plan
             _selectedModel.value = snapshot.selectedModel
             _thinkingLevel.value = ThinkingLevel.fromId(snapshot.thinkingLevel)
-            _theme.value = snapshot.theme
             _streamingAnimations.value = snapshot.streamingAnimations
             _hapticFeedback.value = snapshot.hapticFeedback
             if (snapshot.apiKey != null) {
@@ -209,11 +205,6 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     fun setThinkingLevel(level: ThinkingLevel) {
         _thinkingLevel.value = level
         viewModelScope.launch { prefs.saveThinkingLevel(level.id) }
-    }
-
-    fun setTheme(theme: String) {
-        _theme.value = theme
-        viewModelScope.launch { prefs.saveTheme(theme) }
     }
 
     fun setStreamingAnimations(on: Boolean) {

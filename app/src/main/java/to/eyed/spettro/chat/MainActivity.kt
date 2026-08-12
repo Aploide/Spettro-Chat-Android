@@ -33,8 +33,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val theme by appVm.theme.collectAsState()
-            SpettroChatTheme(charcoal = theme == "charcoal") {
+            SpettroChatTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = androidx.compose.material3.MaterialTheme.colorScheme.background,

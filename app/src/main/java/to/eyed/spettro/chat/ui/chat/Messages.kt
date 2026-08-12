@@ -77,11 +77,10 @@ fun MessagesList(
     animations: Boolean,
     isTemporary: Boolean,
     onRegenerate: () -> Unit,
-    onSuggestion: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (messages.isEmpty() && stream is StreamState.Idle) {
-        EmptyState(isTemporary, onSuggestion, modifier)
+        EmptyState(isTemporary, modifier)
         return
     }
     // Reversed layout: index 0 sits at the visual bottom, so the newest
@@ -340,7 +339,7 @@ private fun RateLimitNotice(seconds: Int) {
 }
 
 @Composable
-private fun EmptyState(isTemporary: Boolean, onSuggestion: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun EmptyState(isTemporary: Boolean, modifier: Modifier = Modifier) {
     Column(
         modifier.fillMaxWidth().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -361,24 +360,5 @@ private fun EmptyState(isTemporary: Boolean, onSuggestion: (String) -> Unit, mod
             color = Ink.I500,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(24.dp))
-        androidx.compose.foundation.layout.FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            listOf("Explain a concept", "Draft a spec", "Review my code").forEach { s ->
-                Box(
-                    Modifier
-                        .surfaceLow(CircleShape)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { onSuggestion(s) }
-                        .padding(horizontal = 14.dp, vertical = 9.dp),
-                ) {
-                    Text(s, fontSize = 13.sp, color = Ink.I100)
-                }
-            }
-        }
     }
 }

@@ -23,7 +23,6 @@ class AppPrefs(private val context: Context) {
         val planStatus = stringPreferencesKey("spettro_plan_status")
         val selectedModel = stringPreferencesKey("selected_model")
         val thinkingLevel = stringPreferencesKey("thinking_level")
-        val theme = stringPreferencesKey("theme") // "pitch" | "charcoal"
         val streamingAnimations = booleanPreferencesKey("streaming_animations")
         val hapticFeedback = booleanPreferencesKey("haptic_feedback")
     }
@@ -35,7 +34,6 @@ class AppPrefs(private val context: Context) {
         val planStatus: String,
         val selectedModel: String,
         val thinkingLevel: String,
-        val theme: String,
         val streamingAnimations: Boolean,
         val hapticFeedback: Boolean,
     )
@@ -57,7 +55,6 @@ class AppPrefs(private val context: Context) {
             planStatus = p[Keys.planStatus] ?: "",
             selectedModel = p[Keys.selectedModel] ?: "",
             thinkingLevel = p[Keys.thinkingLevel] ?: "high",
-            theme = p[Keys.theme] ?: "pitch",
             streamingAnimations = p[Keys.streamingAnimations] ?: true,
             hapticFeedback = p[Keys.hapticFeedback] ?: true,
         )
@@ -96,10 +93,6 @@ class AppPrefs(private val context: Context) {
 
     suspend fun saveThinkingLevel(level: String) {
         context.dataStore.edit { it[Keys.thinkingLevel] = level }
-    }
-
-    suspend fun saveTheme(theme: String) {
-        context.dataStore.edit { it[Keys.theme] = theme }
     }
 
     suspend fun saveStreamingAnimations(on: Boolean) {

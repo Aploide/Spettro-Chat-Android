@@ -58,15 +58,14 @@ private val SpettroShapes = Shapes(
     extraLarge = RoundedCornerShape(Radii.sheet),
 )
 
+/** One theme: pure black canvas, white ink. No variants. */
 @Composable
-fun SpettroChatTheme(charcoal: Boolean = false, content: @Composable () -> Unit) {
-    // "Pitch is pure #000. Charcoal lifts surfaces to #0a0a0a."
-    val canvas = if (charcoal) Ink.I900 else Ink.Pitch
+fun SpettroChatTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = MonochromeScheme.copy(background = canvas, surface = canvas),
+        colorScheme = MonochromeScheme,
         typography = Typography,
         shapes = SpettroShapes,
     ) {
-        Surface(color = canvas, contentColor = Ink.I100, content = content)
+        Surface(color = Ink.Pitch, contentColor = Ink.I100, content = content)
     }
 }
