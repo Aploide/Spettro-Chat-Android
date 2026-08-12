@@ -60,16 +60,14 @@ fun modelDisplayName(id: String): String =
     }
 
 /**
- * Minimal top bar: sidebar toggle, the model name (opens the model sheet),
- * and the account avatar. Everything else lives in sheets and menus.
+ * Minimal top bar: sidebar toggle, the wordmark, and the account avatar.
+ * Model selection lives in the composer chip.
  */
 @Composable
 fun TopNav(
-    modelName: String?,
     email: String,
     plan: String,
     onOpenDrawer: () -> Unit,
-    onOpenModelSheet: () -> Unit,
     onOpenSettings: () -> Unit,
     onManageSubscription: () -> Unit,
     onSignOut: () -> Unit,
@@ -82,31 +80,15 @@ fun TopNav(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             GhostIconButton(Icons.Rounded.Menu, "Open sidebar", onOpenDrawer, size = 40.dp, iconSize = 20.dp, tint = Ink.I100)
-            Spacer(Modifier.width(2.dp))
-
-            Row(
-                Modifier
-                    .clip(CircleShape)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onOpenModelSheet,
-                    )
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    modelName ?: "Spettro",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Ink.I100,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 200.dp),
-                )
-                Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(18.dp), tint = Ink.I500)
-            }
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "Spettro",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Ink.I100,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
 
             Spacer(Modifier.weight(1f))
 

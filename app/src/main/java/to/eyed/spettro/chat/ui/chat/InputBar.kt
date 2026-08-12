@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +43,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import to.eyed.spettro.chat.ui.components.GhostIconButton
@@ -54,9 +56,8 @@ import to.eyed.spettro.chat.ui.theme.Radii
 data class PendingImage(val dataUrl: String, val thumbnail: Bitmap?)
 
 /**
- * The composer: a flat rounded pill with attach (+), auto-resizing input,
- * and a circular send button that turns white when there's content. While a
- * reply streams the send button becomes a stop button.
+ * The composer: text field on top, controls row below it - attach (+), the
+ * model/effort chip that opens the model sheet, and the send/stop button.
  */
 @Composable
 fun InputBar(
@@ -66,6 +67,9 @@ fun InputBar(
     onAddImage: () -> Unit,
     onRemoveImage: (Int) -> Unit,
     canAttach: Boolean,
+    modelName: String?,
+    effortLabel: String?,
+    onOpenModelSheet: () -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
     isStreaming: Boolean,
@@ -119,24 +123,11 @@ fun InputBar(
                     }
                 }
             }
-            Row(
+            Column(
                 Modifier
                     .fillMaxWidth()
-                    .surfaceRaised(RoundedCornerShape(Radii.inputBar))
-                    .padding(6.dp),
-                verticalAlignment = Alignment.Bottom,
+                    .surfaceRaised(RoundedCornerShape(Radii.card)),
             ) {
-                if (canAttach) {
-                    GhostIconButton(
-                        Icons.Rounded.Add,
-                        "Attach image",
-                        onClick = onAddImage,
-                        size = 40.dp,
-                        iconSize = 20.dp,
-                        tint = Ink.I300,
-                        modifier = Modifier.padding(bottom = 2.dp),
-                    )
-                }
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
@@ -144,14 +135,7 @@ fun InputBar(
                     cursorBrush = SolidColor(Ink.White),
                     maxLines = 7,
                     decorationBox = { inner ->
-                        Box(
-                            Modifier.padding(
-                                start = if (canAttach) 4.dp else 14.dp,
-                                end = 8.dp,
-                                top = 12.dp,
-                                bottom = 12.dp,
-                            ),
-                        ) {
+                        Box(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
                             if (value.isEmpty()) {
                                 Text("Message Spettro…", color = Ink.I500, fontSize = 16.sp)
                             }
@@ -159,16 +143,59 @@ fun InputBar(
                         }
                     },
                     modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 44.dp, max = 160.dp),
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp, max = 170.dp),
                 )
-                Spacer(Modifier.size(6.dp))
-                SendButton(
-                    hasContent = value.isNotBlank() || attachments.isNotEmpty(),
-                    isStreaming = isStreaming,
-                    onSend = onSend,
-                    onStop = onStop,
-                )
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (canAttach) {
+                        GhostIconButton(
+                            Icons.Rounded.Add,
+                            "Attach image",
+                            onClick = onAddImage,
+                            size = 38.dp,
+                            iconSize = 21.dp,
+                            tint = Ink.I100,
+                        )
+                        Spacer(Modifier.width(2.dp))
+                    }
+                    // Model + effort chip, opens the model sheet.
+                    if (modelName != null) {
+                        Row(
+                            Modifier
+                                .clip(CircleShape)
+                                .background(Ink.SurfaceHigh)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = onOpenModelSheet,
+                                )
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                modelName,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Ink.I100,
+                                maxLines = 1,
+                            )
+                            if (effortLabel != null) {
+                                Spacer(Modifier.width(6.dp))
+                                Text(effortLabel, fontSize = 13.sp, color = Ink.I500, maxLines = 1)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    SendButton(
+                        hasContent = value.isNotBlank() || attachments.isNotEmpty(),
+                        isStreaming = isStreaming,
+                        onSend = onSend,
+                        onStop = onStop,
+                    )
+                }
             }
         }
     }
@@ -186,9 +213,8 @@ private fun SendButton(
     val scale by animateFloatAsState(if (active) 1f else 0.94f, snappySpring(), label = "sendScale")
     Box(
         Modifier
-            .padding(bottom = 2.dp)
             .scale(scale)
-            .size(40.dp)
+            .size(38.dp)
             .clip(CircleShape)
             .background(bg)
             .clickable(

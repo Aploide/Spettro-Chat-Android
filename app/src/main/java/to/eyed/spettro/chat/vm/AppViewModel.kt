@@ -15,15 +15,23 @@ import to.eyed.spettro.chat.data.api.ModelInfo
 import to.eyed.spettro.chat.data.api.SpettroApi
 import to.eyed.spettro.chat.data.api.UnauthorizedException
 
-/** Thinking levels shown in the UI, mapped to the wire's reasoning_effort. */
-enum class ThinkingLevel(val id: String, val label: String, val description: String, val bars: Int, val effort: String?) {
-    Fast("fast", "Fast", "Instant answers, minimal deliberation", 1, null),
-    Balanced("balanced", "Balanced", "Thinks when the problem needs it", 2, "medium"),
-    Deep("deep", "Deep Thought", "Extended reasoning, shows its work", 3, "high"),
+/** Effort levels shown in the UI, mapped to the wire's reasoning_effort. */
+enum class ThinkingLevel(
+    val id: String,
+    val label: String,
+    val description: String,
+    val effort: String?,
+    val isDefault: Boolean = false,
+) {
+    Low("low", "Low", "Quick answers to simple questions", "low"),
+    Medium("medium", "Medium", "Light, everyday tasks", "medium"),
+    High("high", "High", "Balanced for daily work", "high", isDefault = true),
+    Extra("extra", "Extra", "Complex, detailed work", "xhigh"),
+    Max("max", "Max", "The hardest problems. Takes longer.", "xhigh"),
     ;
 
     companion object {
-        fun fromId(id: String) = entries.firstOrNull { it.id == id } ?: Balanced
+        fun fromId(id: String) = entries.firstOrNull { it.id == id } ?: High
     }
 }
 
@@ -63,7 +71,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     private val _selectedModel = MutableStateFlow("")
     val selectedModel: StateFlow<String> = _selectedModel.asStateFlow()
 
-    private val _thinkingLevel = MutableStateFlow(ThinkingLevel.Balanced)
+    private val _thinkingLevel = MutableStateFlow(ThinkingLevel.High)
     val thinkingLevel: StateFlow<ThinkingLevel> = _thinkingLevel.asStateFlow()
 
     private val _theme = MutableStateFlow("pitch")

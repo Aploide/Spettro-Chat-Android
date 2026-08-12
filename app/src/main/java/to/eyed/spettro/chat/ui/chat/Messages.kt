@@ -166,7 +166,9 @@ private fun UserBubble(msg: StoredMessage) {
                     .surfaceHigh(RoundedCornerShape(Radii.card))
                     .padding(horizontal = 18.dp, vertical = 12.dp),
             ) {
-                Text(msg.content, color = Ink.White, fontSize = 15.sp, lineHeight = 22.sp)
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(msg.content, color = Ink.White, fontSize = 15.sp, lineHeight = 22.sp)
+                }
             }
         }
     }

@@ -56,7 +56,7 @@ class AppPrefs(private val context: Context) {
             plan = p[Keys.plan] ?: "",
             planStatus = p[Keys.planStatus] ?: "",
             selectedModel = p[Keys.selectedModel] ?: "",
-            thinkingLevel = p[Keys.thinkingLevel] ?: "balanced",
+            thinkingLevel = p[Keys.thinkingLevel] ?: "high",
             theme = p[Keys.theme] ?: "pitch",
             streamingAnimations = p[Keys.streamingAnimations] ?: true,
             hapticFeedback = p[Keys.hapticFeedback] ?: true,

@@ -7,7 +7,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
@@ -41,11 +40,12 @@ class MainActivity : ComponentActivity() {
                     color = androidx.compose.material3.MaterialTheme.colorScheme.background,
                 ) {
                     val authState by appVm.authState.collectAsState()
+                    // safeDrawing already contains the IME inset; adding
+                    // imePadding() on top doubles the keyboard padding.
                     androidx.compose.foundation.layout.Box(
                         Modifier
                             .fillMaxSize()
-                            .safeDrawingPadding()
-                            .imePadding(),
+                            .safeDrawingPadding(),
                     ) {
                         when (val state = authState) {
                             is AuthState.Loading -> Unit // brand-black splash

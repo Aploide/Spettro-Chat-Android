@@ -1,29 +1,48 @@
 package to.eyed.spettro.chat.ui.chat
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
 import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
@@ -46,12 +65,14 @@ import to.eyed.spettro.chat.ui.theme.whiteA
 @Composable
 fun MarkdownBody(text: String, modifier: Modifier = Modifier) {
     val chunks = remember(text) { MarkdownChunker.chunks(text) }
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        chunks.forEachIndexed { index, chunk ->
-            key(index) { MarkdownChunkView(chunk) }
+    SelectionContainer {
+        Column(
+            modifier = modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            chunks.forEachIndexed { index, chunk ->
+                key(index) { MarkdownChunkView(chunk) }
+            }
         }
     }
 }
@@ -109,10 +130,11 @@ private fun MarkdownChunkView(chunk: String) {
     )
 }
 
-/** Code card: mono uppercase language bar, hairline seam, scrolling code. */
+/** Code card: language bar with a copy action, hairline seam, scrolling code. */
 @Composable
 private fun MonoCodeBlock(code: String, language: String?) {
     val shape = RoundedCornerShape(16.dp)
+    val context = LocalContext.current
     Column(
         Modifier
             .fillMaxWidth()
@@ -124,13 +146,21 @@ private fun MonoCodeBlock(code: String, language: String?) {
             Modifier
                 .fillMaxWidth()
                 .background(whiteA(0.03f))
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = language?.takeIf { it.isNotBlank() } ?: "text",
                 fontSize = 11.sp,
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                fontFamily = FontFamily.Monospace,
                 color = Ink.I500,
+                modifier = Modifier.weight(1f),
+            )
+            CopyChip(
+                onCopy = {
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("Code", code.trimEnd('\n')))
+                },
             )
         }
         Hairline()
@@ -143,6 +173,43 @@ private fun MonoCodeBlock(code: String, language: String?) {
                 modifier = Modifier.padding(16.dp),
             )
         }
+    }
+}
+
+/** Small "Copy"/"Copied" action in the code block header. */
+@Composable
+private fun CopyChip(onCopy: () -> Unit) {
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1600)
+            copied = false
+        }
+    }
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) {
+                onCopy()
+                copied = true
+            }
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+            contentDescription = "Copy code",
+            Modifier.padding(end = 4.dp).size(12.dp),
+            tint = if (copied) Ink.White else Ink.I500,
+        )
+        Text(
+            if (copied) "Copied" else "Copy",
+            fontSize = 11.sp,
+            color = if (copied) Ink.White else Ink.I500,
+        )
     }
 }
 

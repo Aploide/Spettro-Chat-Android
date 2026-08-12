@@ -141,11 +141,9 @@ fun ChatRoot(
     ) {
         Column(Modifier.fillMaxSize()) {
             TopNav(
-                modelName = selectedModel?.let { modelDisplayName(it.id) },
                 email = email,
                 plan = plan,
                 onOpenDrawer = { scope.launch { drawerState.open() } },
-                onOpenModelSheet = { showModelSheet = true },
                 onOpenSettings = { showSettings = true },
                 onManageSubscription = { showPricing = true },
                 onSignOut = { appVm.signOut() },
@@ -188,6 +186,9 @@ fun ChatRoot(
                                 attachments = attachments.filterIndexed { idx, _ -> idx != i }
                             },
                             canAttach = selectedModel?.vision == true,
+                            modelName = selectedModel?.let { modelDisplayName(it.id) },
+                            effortLabel = if (selectedModel?.reasoning == true) thinking.label else null,
+                            onOpenModelSheet = { showModelSheet = true },
                             onSend = {
                                 if (hapticsOn) {
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
