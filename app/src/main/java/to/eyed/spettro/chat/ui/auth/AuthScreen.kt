@@ -18,9 +18,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material3.Icon
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Sparkles
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,7 +60,7 @@ fun AuthScreen(
                     .surfaceLow(RoundedCornerShape(Radii.card)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(30.dp), tint = Ink.White)
+                Icon(Lucide.Sparkles, null, Modifier.size(30.dp), tint = Ink.White)
             }
             Spacer(Modifier.height(24.dp))
             Text("Spettro Chat", style = MaterialTheme.typography.headlineSmall, color = Ink.White)

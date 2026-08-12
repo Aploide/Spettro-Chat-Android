@@ -19,11 +19,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
+import com.composables.icons.lucide.Check
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Sparkles
+import com.composables.icons.lucide.X
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -84,7 +84,7 @@ fun PricingScreen(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Pricing", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Ink.I500)
             Spacer(Modifier.weight(1f))
-            GhostIconButton(Icons.Rounded.Close, "Close", onClose)
+            GhostIconButton(Lucide.X, "Close", onClose)
         }
         Spacer(Modifier.height(8.dp))
         Text(
@@ -189,7 +189,7 @@ private fun TierCard(tier: Tier, yearly: Boolean, isCurrent: Boolean, onUpgrade:
                             .background(Ink.SurfaceHigh),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Rounded.Check, null, Modifier.size(9.dp), tint = Ink.White)
+                        Icon(Lucide.Check, null, Modifier.size(9.dp), tint = Ink.White)
                     }
                     Spacer(Modifier.width(10.dp))
                     Text(feature, fontSize = 13.sp, color = Ink.I100)
@@ -232,7 +232,7 @@ private fun TierCard(tier: Tier, yearly: Boolean, isCurrent: Boolean, onUpgrade:
                     .padding(horizontal = 12.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(10.dp), tint = Ink.Pitch)
+                Icon(Lucide.Sparkles, null, Modifier.size(10.dp), tint = Ink.Pitch)
                 Spacer(Modifier.width(4.dp))
                 Text(
                     "POPULAR",

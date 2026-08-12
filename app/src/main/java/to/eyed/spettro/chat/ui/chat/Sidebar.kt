@@ -25,17 +25,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.Inventory2
-import androidx.compose.material.icons.rounded.PushPin
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Unarchive
 import androidx.compose.material3.Icon
+import com.composables.icons.lucide.Archive
+import com.composables.icons.lucide.ArchiveRestore
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Pin
+import com.composables.icons.lucide.Search
+import com.composables.icons.lucide.Settings
+import com.composables.icons.lucide.Sparkles
+import com.composables.icons.lucide.SquarePen
+import com.composables.icons.lucide.Trash2
+import com.composables.icons.lucide.X
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -112,11 +112,11 @@ fun Sidebar(
             Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 16.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp), tint = Ink.White)
+            Icon(Lucide.Sparkles, null, Modifier.size(18.dp), tint = Ink.White)
             Spacer(Modifier.width(10.dp))
             Text("Spettro", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ink.White)
             Spacer(Modifier.weight(1f))
-            GhostIconButton(Icons.Rounded.Close, "Close sidebar", onCollapse, size = 40.dp, iconSize = 18.dp)
+            GhostIconButton(Lucide.X, "Close sidebar", onCollapse, size = 40.dp, iconSize = 18.dp)
         }
 
         // Search
@@ -128,7 +128,7 @@ fun Sidebar(
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Rounded.Search, null, Modifier.size(16.dp), tint = Ink.I500)
+            Icon(Lucide.Search, null, Modifier.size(16.dp), tint = Ink.I500)
             Spacer(Modifier.width(10.dp))
             BasicTextField(
                 value = query,
@@ -146,7 +146,7 @@ fun Sidebar(
             )
             if (query.isNotEmpty()) {
                 Icon(
-                    Icons.Rounded.Close,
+                    Lucide.X,
                     "Clear search",
                     Modifier
                         .size(16.dp)
@@ -173,7 +173,7 @@ fun Sidebar(
                 .padding(horizontal = 8.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Rounded.Add, null, Modifier.size(20.dp), tint = Ink.I100)
+            Icon(Lucide.SquarePen, null, Modifier.size(19.dp), tint = Ink.I100)
             Spacer(Modifier.width(12.dp))
             Text("New chat", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Ink.I100)
         }
@@ -218,7 +218,7 @@ fun Sidebar(
                             .padding(horizontal = 8.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Rounded.Inventory2, null, Modifier.size(16.dp), tint = Ink.I500)
+                        Icon(Lucide.Archive, null, Modifier.size(16.dp), tint = Ink.I500)
                         Spacer(Modifier.width(12.dp))
                         Text("Archived", fontSize = 15.sp, color = Ink.I300)
                         Spacer(Modifier.weight(1f))
@@ -241,11 +241,11 @@ fun Sidebar(
                                 modifier = Modifier.weight(1f),
                             )
                             GhostIconButton(
-                                Icons.Rounded.Unarchive, "Restore chat",
+                                Lucide.ArchiveRestore, "Restore chat",
                                 onClick = { onRestore(conv.id) }, size = 32.dp, iconSize = 14.dp,
                             )
                             GhostIconButton(
-                                Icons.Rounded.DeleteOutline, "Delete chat",
+                                Lucide.Trash2, "Delete chat",
                                 onClick = { onDelete(conv.id) }, size = 32.dp, iconSize = 14.dp,
                             )
                         }
@@ -294,7 +294,7 @@ fun Sidebar(
                     color = Ink.I500,
                 )
             }
-            Icon(Icons.Rounded.Settings, null, Modifier.size(18.dp), tint = Ink.I500)
+            Icon(Lucide.Settings, null, Modifier.size(18.dp), tint = Ink.I500)
         }
     }
 }
@@ -337,7 +337,7 @@ private fun ThreadRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (conv.pinned) {
-                Icon(Icons.Rounded.PushPin, null, Modifier.size(13.dp), tint = Ink.I500)
+                Icon(Lucide.Pin, null, Modifier.size(13.dp), tint = Ink.I500)
                 Spacer(Modifier.width(8.dp))
             }
             Text(
@@ -350,11 +350,11 @@ private fun ThreadRow(
             )
         }
         GlassMenu(visible = menuOpen, onDismiss = { menuOpen = false }, header = null) {
-            MenuActionRow(Icons.Rounded.PushPin, if (conv.pinned) "Unpin" else "Pin") {
+            MenuActionRow(Lucide.Pin, if (conv.pinned) "Unpin" else "Pin") {
                 menuOpen = false
                 onTogglePin(conv.id)
             }
-            MenuActionRow(Icons.Rounded.Inventory2, "Archive") {
+            MenuActionRow(Lucide.Archive, "Archive") {
                 menuOpen = false
                 onArchive(conv.id)
             }

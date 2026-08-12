@@ -32,12 +32,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
+import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.ChevronUp
+import com.composables.icons.lucide.Copy
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.RefreshCw
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -75,12 +75,13 @@ fun MessagesList(
     stream: StreamState,
     listState: LazyListState,
     animations: Boolean,
+    isTemporary: Boolean,
     onRegenerate: () -> Unit,
     onSuggestion: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (messages.isEmpty() && stream is StreamState.Idle) {
-        EmptyState(onSuggestion, modifier)
+        EmptyState(isTemporary, onSuggestion, modifier)
         return
     }
     // Reversed layout: index 0 sits at the visual bottom, so the newest
@@ -197,7 +198,7 @@ private fun AssistantMessage(
         AnimatedVisibility(showActions, enter = fadeIn(tween(200)), exit = fadeOut(tween(150))) {
             Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 GhostIconButton(
-                    Icons.Rounded.ContentCopy,
+                    Lucide.Copy,
                     "Copy message",
                     onClick = { copyToClipboard(context, text) },
                     size = 32.dp,
@@ -205,7 +206,7 @@ private fun AssistantMessage(
                     tint = Ink.I500,
                 )
                 GhostIconButton(
-                    Icons.Rounded.Refresh,
+                    Lucide.RefreshCw,
                     "Regenerate",
                     onClick = onRegenerate,
                     size = 32.dp,
@@ -244,7 +245,7 @@ private fun ReasoningPanel(reasoning: String, live: Boolean) {
             }
             Spacer(Modifier.weight(1f))
             Icon(
-                if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                if (expanded) Lucide.ChevronUp else Lucide.ChevronDown,
                 null,
                 Modifier.size(16.dp),
                 tint = Ink.I500,
@@ -339,7 +340,7 @@ private fun RateLimitNotice(seconds: Int) {
 }
 
 @Composable
-private fun EmptyState(onSuggestion: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun EmptyState(isTemporary: Boolean, onSuggestion: (String) -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier.fillMaxWidth().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -347,10 +348,15 @@ private fun EmptyState(onSuggestion: (String) -> Unit, modifier: Modifier = Modi
     ) {
         LiquidMark(28.dp)
         Spacer(Modifier.height(20.dp))
-        Text("Where should we begin?", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Ink.White)
+        Text(
+            if (isTemporary) "Temporary chat" else "Where should we begin?",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Ink.White,
+        )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Ask anything. Think out loud.",
+            if (isTemporary) "This conversation won't be saved.\nClose it and it's gone." else "Ask anything. Think out loud.",
             fontSize = 14.sp,
             color = Ink.I500,
             textAlign = TextAlign.Center,

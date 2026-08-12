@@ -22,12 +22,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Icon
+import com.composables.icons.lucide.ArrowUp
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.Square
+import com.composables.icons.lucide.X
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -117,7 +117,7 @@ fun InputBar(
                                     ) { onRemoveImage(i) },
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Icon(Icons.Rounded.Close, "Remove image", Modifier.size(12.dp), tint = Ink.White)
+                                Icon(Lucide.X, "Remove image", Modifier.size(12.dp), tint = Ink.White)
                             }
                         }
                     }
@@ -152,7 +152,7 @@ fun InputBar(
                 ) {
                     if (canAttach) {
                         GhostIconButton(
-                            Icons.Rounded.Add,
+                            Lucide.Plus,
                             "Attach image",
                             onClick = onAddImage,
                             size = 38.dp,
@@ -225,7 +225,7 @@ private fun SendButton(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            if (isStreaming) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
+            if (isStreaming) Lucide.Square else Lucide.ArrowUp,
             contentDescription = if (isStreaming) "Stop" else "Send",
             Modifier.size(18.dp),
             tint = if (active) Ink.Pitch else Ink.I500,

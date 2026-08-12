@@ -69,9 +69,12 @@ fun ChatRoot(
     val conversations by chatVm.conversations.collectAsState()
     val activeId by chatVm.activeId.collectAsState()
     val stream by chatVm.stream.collectAsState()
+    val tempChat by chatVm.tempChat.collectAsState()
+    val isTemporary by chatVm.isTemporary.collectAsState()
 
     val selectedModel = models.firstOrNull { it.id == selectedModelId }
-    val activeConv = conversations.firstOrNull { it.id == activeId }
+    val activeConv = tempChat?.takeIf { it.id == activeId }
+        ?: conversations.firstOrNull { it.id == activeId }
     val messages = activeConv?.messages ?: emptyList()
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -141,12 +144,9 @@ fun ChatRoot(
     ) {
         Column(Modifier.fillMaxSize()) {
             TopNav(
-                email = email,
-                plan = plan,
+                isTemporary = isTemporary,
                 onOpenDrawer = { scope.launch { drawerState.open() } },
-                onOpenSettings = { showSettings = true },
-                onManageSubscription = { showPricing = true },
-                onSignOut = { appVm.signOut() },
+                onToggleTemporary = chatVm::toggleTemporaryChat,
             )
             val streamingAnimationsOn by appVm.streamingAnimations.collectAsState()
             val hapticsOn by appVm.hapticFeedback.collectAsState()
@@ -157,6 +157,7 @@ fun ChatRoot(
                     stream = stream,
                     listState = listState,
                     animations = streamingAnimationsOn,
+                    isTemporary = isTemporary,
                     onRegenerate = { chatVm.regenerate(selectedModel, thinking) },
                     onSuggestion = { input = it },
                     modifier = Modifier.fillMaxSize(),

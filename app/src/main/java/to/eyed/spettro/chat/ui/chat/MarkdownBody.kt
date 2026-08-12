@@ -18,10 +18,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material3.Icon
+import com.composables.icons.lucide.Check
+import com.composables.icons.lucide.Copy
+import com.composables.icons.lucide.Lucide
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -200,7 +200,7 @@ private fun CopyChip(onCopy: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+            if (copied) Lucide.Check else Lucide.Copy,
             contentDescription = "Copy code",
             Modifier.padding(end = 4.dp).size(12.dp),
             tint = if (copied) Ink.White else Ink.I500,

@@ -67,32 +67,75 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     private val _stream = MutableStateFlow<StreamState>(StreamState.Idle)
     val stream: StateFlow<StreamState> = _stream.asStateFlow()
 
+    /**
+     * A temporary chat lives only in memory: never written to the store,
+     * never listed in the sidebar, gone when it's left or the app closes.
+     */
+    private val _tempChat = MutableStateFlow<Conversation?>(null)
+    val tempChat: StateFlow<Conversation?> = _tempChat.asStateFlow()
+    private val _isTemporary = MutableStateFlow(false)
+    val isTemporary: StateFlow<Boolean> = _isTemporary.asStateFlow()
+
     private var sendJob: Job? = null
 
     val activeConversation: Conversation?
-        get() = _conversations.value.firstOrNull { it.id == _activeId.value }
+        get() = _tempChat.value?.takeIf { it.id == _activeId.value }
+            ?: _conversations.value.firstOrNull { it.id == _activeId.value }
 
     init {
         viewModelScope.launch { _conversations.value = store.loadAll() }
     }
 
+    private companion object {
+        const val TEMP_ID = "temporary"
+    }
+
     fun newChat() {
         stopStreaming()
+        discardTemp()
         _activeId.value = null
     }
 
     fun selectChat(id: String) {
         stopStreaming()
+        discardTemp()
         _activeId.value = id
     }
 
+    /** Enter (or leave) a throwaway conversation. */
+    fun toggleTemporaryChat() {
+        stopStreaming()
+        if (_isTemporary.value) {
+            discardTemp()
+            _activeId.value = null
+            return
+        }
+        val now = System.currentTimeMillis()
+        _tempChat.value = Conversation(id = TEMP_ID, createdAt = now, updatedAt = now)
+        _isTemporary.value = true
+        _activeId.value = TEMP_ID
+    }
+
+    private fun discardTemp() {
+        _tempChat.value = null
+        _isTemporary.value = false
+    }
+
     private fun upsert(conversation: Conversation) {
+        if (conversation.id == TEMP_ID) {
+            _tempChat.value = conversation
+            return
+        }
         _conversations.value =
             listOf(conversation) + _conversations.value.filter { it.id != conversation.id }
         viewModelScope.launch { store.save(conversation) }
     }
 
     private fun update(id: String, transform: (Conversation) -> Conversation) {
+        if (id == TEMP_ID) {
+            _tempChat.value = _tempChat.value?.let(transform)
+            return
+        }
         val conv = _conversations.value.firstOrNull { it.id == id } ?: return
         val updated = transform(conv)
         _conversations.value = _conversations.value.map { if (it.id == id) updated else it }
@@ -116,6 +159,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
 
     fun deleteAll() {
         stopStreaming()
+        discardTemp()
         _conversations.value = emptyList()
         _activeId.value = null
         viewModelScope.launch { store.deleteAll() }

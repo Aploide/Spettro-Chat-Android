@@ -23,14 +23,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.ExperimentalMaterial3Api
+import com.composables.icons.lucide.ArrowLeft
+import com.composables.icons.lucide.Check
+import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.Ellipsis
+import com.composables.icons.lucide.Gauge
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.X
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -116,7 +116,7 @@ fun ModelSheet(
                     "main" -> {
                         SheetHeader(
                             title = "Select model",
-                            leadingIcon = Icons.Rounded.Close,
+                            leadingIcon = Lucide.X,
                             onLeading = onDismiss,
                         )
                         if (showTiers) {
@@ -146,7 +146,7 @@ fun ModelSheet(
                         if (selected?.reasoning == true) {
                             Spacer(Modifier.height(10.dp))
                             NavCard(
-                                icon = Icons.Rounded.Speed,
+                                icon = Lucide.Gauge,
                                 title = "Effort",
                                 value = thinking.label,
                                 onClick = { page = "effort" },
@@ -155,7 +155,7 @@ fun ModelSheet(
                         if (showTiers && otherModels.isNotEmpty()) {
                             Spacer(Modifier.height(10.dp))
                             NavCard(
-                                icon = Icons.Rounded.MoreHoriz,
+                                icon = Lucide.Ellipsis,
                                 title = "Other models",
                                 value = null,
                                 onClick = { page = "models" },
@@ -167,7 +167,7 @@ fun ModelSheet(
                     "models" -> {
                         SheetHeader(
                             title = "Other models",
-                            leadingIcon = Icons.AutoMirrored.Rounded.ArrowBack,
+                            leadingIcon = Lucide.ArrowLeft,
                             onLeading = { page = "main" },
                         )
                         otherModels.forEach { model ->
@@ -186,7 +186,7 @@ fun ModelSheet(
                     "effort" -> {
                         SheetHeader(
                             title = "Effort",
-                            leadingIcon = Icons.AutoMirrored.Rounded.ArrowBack,
+                            leadingIcon = Lucide.ArrowLeft,
                             onLeading = { page = "main" },
                         )
                         ThinkingLevel.entries.forEach { level ->
@@ -273,7 +273,7 @@ private fun ModelCard(
         }
         if (selected) {
             Spacer(Modifier.width(12.dp))
-            Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = Ink.White)
+            Icon(Lucide.Check, null, Modifier.size(18.dp), tint = Ink.White)
         }
     }
 }
@@ -313,7 +313,7 @@ private fun EffortCard(level: ThinkingLevel, selected: Boolean, onClick: () -> U
         }
         if (selected) {
             Spacer(Modifier.width(12.dp))
-            Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = Ink.White)
+            Icon(Lucide.Check, null, Modifier.size(18.dp), tint = Ink.White)
         }
     }
 }
@@ -351,6 +351,6 @@ private fun NavCard(
                 Text(value, fontSize = 13.sp, color = Ink.I500)
             }
         }
-        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, Modifier.size(20.dp), tint = Ink.I500)
+        Icon(Lucide.ChevronRight, null, Modifier.size(20.dp), tint = Ink.I500)
     }
 }
