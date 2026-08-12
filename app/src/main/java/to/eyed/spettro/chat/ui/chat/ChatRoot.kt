@@ -1,5 +1,8 @@
 package to.eyed.spettro.chat.ui.chat
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -7,13 +10,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Text
@@ -30,10 +34,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import to.eyed.spettro.chat.data.ImageUtil
 import to.eyed.spettro.chat.data.api.SpettroApi
 import to.eyed.spettro.chat.ui.components.surfaceCard
 import to.eyed.spettro.chat.ui.pricing.PricingScreen
@@ -67,17 +75,32 @@ fun ChatRoot(
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var input by rememberSaveable { mutableStateOf("") }
+    var attachments by remember { mutableStateOf(listOf<PendingImage>()) }
     var showSettings by remember { mutableStateOf(false) }
     var showPricing by remember { mutableStateOf(false) }
+    var showModelSheet by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
-    // Follow the stream: keep the tail of the newest content visible, but
-    // don't fight the user while they're scrolling back.
+    val photoPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(4),
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            val processed = uris.mapNotNull { uri ->
+                ImageUtil.toDataUrl(context, uri)?.let { PendingImage(it, ImageUtil.decodeDataUrl(it)) }
+            }
+            attachments = (attachments + processed).take(4)
+        }
+    }
+
+    // The list is reversed (index 0 = bottom), so following the stream just
+    // means snapping to 0 - and only when the user is already near the
+    // bottom, so scrolling back to read isn't fought.
     LaunchedEffect(messages.size, stream) {
         if (listState.isScrollInProgress) return@LaunchedEffect
-        val count = listState.layoutInfo.totalItemsCount
-        if (count > 0) listState.scrollToItem(count - 1, scrollOffset = 1_000_000)
+        if (listState.firstVisibleItemIndex <= 1) listState.scrollToItem(0)
     }
 
     ModalNavigationDrawer(
@@ -87,7 +110,7 @@ fun ChatRoot(
             ModalDrawerSheet(
                 drawerContainerColor = Color.Transparent,
                 drawerShape = RoundedCornerShape(0.dp),
-                windowInsets = androidx.compose.foundation.layout.WindowInsets(0),
+                windowInsets = WindowInsets(0),
             ) {
                 Sidebar(
                     conversations = conversations,
@@ -117,22 +140,18 @@ fun ChatRoot(
     ) {
         Column(Modifier.fillMaxSize()) {
             TopNav(
-                models = models,
-                selectedModelId = selectedModelId,
-                onSelectModel = appVm::selectModel,
-                thinking = thinking,
-                onSelectThinking = appVm::setThinkingLevel,
-                showThinking = selectedModel?.reasoning == true,
+                modelName = selectedModel?.let { modelDisplayName(it.id) },
                 email = email,
                 plan = plan,
                 onOpenDrawer = { scope.launch { drawerState.open() } },
+                onOpenModelSheet = { showModelSheet = true },
                 onOpenSettings = { showSettings = true },
                 onManageSubscription = { showPricing = true },
                 onSignOut = { appVm.signOut() },
             )
             val streamingAnimationsOn by appVm.streamingAnimations.collectAsState()
             val hapticsOn by appVm.hapticFeedback.collectAsState()
-            val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+            val haptics = LocalHapticFeedback.current
             Box(Modifier.weight(1f)) {
                 MessagesList(
                     messages = messages,
@@ -147,14 +166,23 @@ fun ChatRoot(
                     InputBar(
                         value = input,
                         onValueChange = { input = it },
+                        attachments = attachments,
+                        onAddImage = {
+                            photoPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        },
+                        onRemoveImage = { i ->
+                            attachments = attachments.filterIndexed { idx, _ -> idx != i }
+                        },
+                        canAttach = selectedModel?.vision == true,
                         onSend = {
                             if (hapticsOn) {
-                                haptics.performHapticFeedback(
-                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
-                                )
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             }
-                            chatVm.send(input, selectedModel, thinking)
+                            chatVm.send(input, attachments.map { it.dataUrl }, selectedModel, thinking)
                             input = ""
+                            attachments = emptyList()
                         },
                         onStop = chatVm::stopStreaming,
                         isStreaming = stream is StreamState.Thinking ||
@@ -187,6 +215,17 @@ fun ChatRoot(
         }
     }
 
+    if (showModelSheet) {
+        ModelSheet(
+            models = models,
+            selectedModelId = selectedModelId,
+            onSelectModel = appVm::selectModel,
+            thinking = thinking,
+            onSelectThinking = appVm::setThinkingLevel,
+            onDismiss = { showModelSheet = false },
+        )
+    }
+
     if (showSettings) {
         val theme by appVm.theme.collectAsState()
         val streamingAnimations by appVm.streamingAnimations.collectAsState()
@@ -215,7 +254,7 @@ fun ChatRoot(
     }
 
     if (showPricing) {
-        Box(Modifier.fillMaxSize().background(androidx.compose.material3.MaterialTheme.colorScheme.background)) {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             PricingScreen(
                 currentPlan = plan,
                 onUpgrade = { onOpenUrl(SpettroApi.PRICING_URL) },

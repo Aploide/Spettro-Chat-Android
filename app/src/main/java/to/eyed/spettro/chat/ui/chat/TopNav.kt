@@ -1,6 +1,5 @@
 package to.eyed.spettro.chat.ui.chat
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -38,7 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -48,16 +46,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
-import to.eyed.spettro.chat.data.api.ModelInfo
 import to.eyed.spettro.chat.ui.components.GhostIconButton
 import to.eyed.spettro.chat.ui.components.Hairline
-import to.eyed.spettro.chat.ui.components.snappySpring
 import to.eyed.spettro.chat.ui.components.surfaceCard
 import to.eyed.spettro.chat.ui.components.surfaceHigh
-import to.eyed.spettro.chat.ui.components.surfaceLow
 import to.eyed.spettro.chat.ui.theme.Ink
 import to.eyed.spettro.chat.ui.theme.Radii
-import to.eyed.spettro.chat.vm.ThinkingLevel
 
 /** Prettify a raw model id ("deepseek-v4-flash" -> "Deepseek V4 Flash"). */
 fun modelDisplayName(id: String): String =
@@ -65,139 +59,62 @@ fun modelDisplayName(id: String): String =
         part.replaceFirstChar { it.uppercase() }
     }
 
+/**
+ * Minimal top bar: sidebar toggle, the model name (opens the model sheet),
+ * and the account avatar. Everything else lives in sheets and menus.
+ */
 @Composable
 fun TopNav(
-    models: List<ModelInfo>,
-    selectedModelId: String,
-    onSelectModel: (String) -> Unit,
-    thinking: ThinkingLevel,
-    onSelectThinking: (ThinkingLevel) -> Unit,
-    showThinking: Boolean,
+    modelName: String?,
     email: String,
     plan: String,
     onOpenDrawer: () -> Unit,
+    onOpenModelSheet: () -> Unit,
     onOpenSettings: () -> Unit,
     onManageSubscription: () -> Unit,
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var openMenu by remember { mutableStateOf<String?>(null) }
+    var userMenu by remember { mutableStateOf(false) }
     Column(modifier.background(MaterialTheme.colorScheme.background)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             GhostIconButton(Icons.Rounded.Menu, "Open sidebar", onOpenDrawer, size = 40.dp, iconSize = 20.dp, tint = Ink.I100)
+            Spacer(Modifier.width(2.dp))
 
-            // Model selector
-            Box {
-                val selected = models.firstOrNull { it.id == selectedModelId }
-                val rotation by animateFloatAsState(if (openMenu == "model") 180f else 0f, snappySpring(), label = "chev")
-                Row(
-                    Modifier
-                        .clip(CircleShape)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { openMenu = if (openMenu == "model") null else "model" }
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(
-                        selected?.let { modelDisplayName(it.id) } ?: "No model",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Ink.I100,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 170.dp),
+            Row(
+                Modifier
+                    .clip(CircleShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onOpenModelSheet,
                     )
-                    Icon(
-                        Icons.Rounded.KeyboardArrowDown,
-                        null,
-                        Modifier.size(18.dp).rotate(rotation),
-                        tint = Ink.I500,
-                    )
-                }
-                GlassMenu(
-                    visible = openMenu == "model",
-                    onDismiss = { openMenu = null },
-                    header = "Model",
-                ) {
-                    if (models.isEmpty()) {
-                        Text(
-                            "Your plan has no models enabled yet.",
-                            fontSize = 12.sp,
-                            color = Ink.I500,
-                            modifier = Modifier.padding(12.dp),
-                        )
-                    }
-                    models.forEach { m ->
-                        MenuRow(
-                            title = modelDisplayName(m.id),
-                            subtitle = buildString {
-                                if (m.contextWindow > 0) append("${m.contextWindow / 1000}k context")
-                                if (m.reasoning) append(" · reasoning")
-                                if (m.vision) append(" · vision")
-                            }.trim(' ', '·'),
-                            selected = m.id == selectedModelId,
-                            onClick = {
-                                onSelectModel(m.id)
-                                openMenu = null
-                            },
-                        )
-                    }
-                }
-            }
-
-            // Thinking selector (only for reasoning models)
-            if (showThinking) {
-                Box {
-                    Row(
-                        Modifier
-                            .surfaceLow(CircleShape)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) { openMenu = if (openMenu == "thinking") null else "thinking" }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        ThinkingBars(thinking.bars)
-                        Text(thinking.label, fontSize = 13.sp, color = Ink.I100, maxLines = 1)
-                    }
-                    GlassMenu(
-                        visible = openMenu == "thinking",
-                        onDismiss = { openMenu = null },
-                        header = "Thinking level",
-                    ) {
-                        ThinkingLevel.entries.forEach { level ->
-                            MenuRow(
-                                title = level.label,
-                                subtitle = level.description,
-                                selected = level == thinking,
-                                leading = { ThinkingBars(level.bars) },
-                                onClick = {
-                                    onSelectThinking(level)
-                                    openMenu = null
-                                },
-                            )
-                        }
-                    }
-                }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    modelName ?: "Spettro",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Ink.I100,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 200.dp),
+                )
+                Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(18.dp), tint = Ink.I500)
             }
 
             Spacer(Modifier.weight(1f))
 
-            // Avatar + user menu
             Box {
-                Avatar(email = email, onClick = { openMenu = if (openMenu == "user") null else "user" })
+                Avatar(email = email, onClick = { userMenu = !userMenu })
                 GlassMenu(
-                    visible = openMenu == "user",
-                    onDismiss = { openMenu = null },
+                    visible = userMenu,
+                    onDismiss = { userMenu = false },
                     header = null,
                     alignEnd = true,
                 ) {
@@ -227,37 +144,21 @@ fun TopNav(
                     Hairline(Modifier.padding(horizontal = 12.dp))
                     Spacer(Modifier.height(4.dp))
                     MenuActionRow(Icons.Rounded.Settings, "Settings") {
-                        openMenu = null
+                        userMenu = false
                         onOpenSettings()
                     }
                     MenuActionRow(Icons.Rounded.CreditCard, "Manage subscription") {
-                        openMenu = null
+                        userMenu = false
                         onManageSubscription()
                     }
                     Hairline(Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
                     MenuActionRow(Icons.AutoMirrored.Rounded.Logout, "Sign out", dim = true) {
-                        openMenu = null
+                        userMenu = false
                         onSignOut()
                     }
                     Spacer(Modifier.height(4.dp))
                 }
             }
-        }
-    }
-}
-
-/** The 3-bar signal meter (heights 7/10/13). */
-@Composable
-fun ThinkingBars(filled: Int) {
-    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        repeat(3) { i ->
-            Box(
-                Modifier
-                    .width(4.dp)
-                    .height((7 + i * 3).dp)
-                    .clip(CircleShape)
-                    .background(if (i < filled) Ink.White else Ink.SurfaceHigh),
-            )
         }
     }
 }

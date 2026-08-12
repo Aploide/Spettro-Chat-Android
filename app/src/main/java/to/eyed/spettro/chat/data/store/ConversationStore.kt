@@ -17,6 +17,8 @@ data class StoredMessage(
     val content: String,
     val thinking: String = "",
     val at: Long,
+    /** Attached images as data URLs (data:image/jpeg;base64,...). */
+    val images: List<String> = emptyList(),
 )
 
 @Serializable

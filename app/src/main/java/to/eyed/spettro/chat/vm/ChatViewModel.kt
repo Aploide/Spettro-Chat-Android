@@ -107,27 +107,26 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         if (_stream.value is StreamState.Error) _stream.value = StreamState.Idle
     }
 
-    fun send(text: String, model: ModelInfo?, thinking: ThinkingLevel) {
+    fun send(text: String, images: List<String>, model: ModelInfo?, thinking: ThinkingLevel) {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() || sendJob?.isActive == true) return
+        if ((trimmed.isEmpty() && images.isEmpty()) || sendJob?.isActive == true) return
         if (model == null) {
             _stream.value = StreamState.Error("Your plan has no models enabled yet.")
             return
         }
 
         val now = System.currentTimeMillis()
+        val userMsg = StoredMessage("user", trimmed, at = now, images = images)
+        val titleSeed = trimmed.ifBlank { "Image" }
         val conv = activeConversation?.let {
-            it.copy(
-                messages = it.messages + StoredMessage("user", trimmed, at = now),
-                updatedAt = now,
-            )
+            it.copy(messages = it.messages + userMsg, updatedAt = now)
         } ?: Conversation(
             id = store.newId(),
-            title = trimmed.take(64),
-            preview = trimmed.take(120),
+            title = titleSeed.take(64),
+            preview = titleSeed.take(120),
             createdAt = now,
             updatedAt = now,
-            messages = listOf(StoredMessage("user", trimmed, at = now)),
+            messages = listOf(userMsg),
         )
         _activeId.value = conv.id
         upsert(conv)
@@ -146,7 +145,9 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun startStream(conv: Conversation, model: ModelInfo, thinking: ThinkingLevel) {
-        val history = conv.messages.map { OutgoingMessage(role = it.role, text = it.content) }
+        val history = conv.messages.map {
+            OutgoingMessage(role = it.role, text = it.content, imageDataUrls = it.images)
+        }
         // Only reasoning-capable models accept reasoning_effort.
         val effort = if (model.reasoning) thinking.effort else null
 

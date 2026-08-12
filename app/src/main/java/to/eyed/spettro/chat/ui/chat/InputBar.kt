@@ -1,8 +1,10 @@
 package to.eyed.spettro.chat.ui.chat
 
+import android.graphics.Bitmap
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -15,11 +17,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -34,24 +39,33 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import to.eyed.spettro.chat.ui.components.GhostIconButton
 import to.eyed.spettro.chat.ui.components.snappySpring
 import to.eyed.spettro.chat.ui.components.surfaceRaised
 import to.eyed.spettro.chat.ui.theme.Ink
 import to.eyed.spettro.chat.ui.theme.Radii
 
+/** One pending attachment: the wire data URL plus a decoded thumbnail. */
+data class PendingImage(val dataUrl: String, val thumbnail: Bitmap?)
+
 /**
- * The composer: a flat rounded pill with an auto-resizing input and a
- * circular send button that turns solid white when there's content. While a
+ * The composer: a flat rounded pill with attach (+), auto-resizing input,
+ * and a circular send button that turns white when there's content. While a
  * reply streams the send button becomes a stop button.
  */
 @Composable
 fun InputBar(
     value: String,
     onValueChange: (String) -> Unit,
+    attachments: List<PendingImage>,
+    onAddImage: () -> Unit,
+    onRemoveImage: (Int) -> Unit,
+    canAttach: Boolean,
     onSend: () -> Unit,
     onStop: () -> Unit,
     isStreaming: Boolean,
@@ -59,14 +73,52 @@ fun InputBar(
 ) {
     val canvas = MaterialTheme.colorScheme.background
     Column(modifier.fillMaxWidth()) {
-        // Fade from transparent to the canvas above the bar
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(40.dp)
+                .height(32.dp)
                 .background(Brush.verticalGradient(0f to Color.Transparent, 1f to canvas)),
         )
-        Column(Modifier.background(canvas).padding(start = 12.dp, end = 12.dp, bottom = 10.dp)) {
+        Column(Modifier.background(canvas).padding(start = 12.dp, end = 12.dp, bottom = 14.dp)) {
+            if (attachments.isNotEmpty()) {
+                LazyRow(Modifier.padding(bottom = 8.dp)) {
+                    items(attachments.size) { i ->
+                        Box(Modifier.padding(end = 8.dp)) {
+                            val thumb = attachments[i].thumbnail
+                            Box(
+                                Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(Radii.control))
+                                    .background(Ink.SurfaceHigh),
+                            ) {
+                                if (thumb != null) {
+                                    Image(
+                                        bitmap = thumb.asImageBitmap(),
+                                        contentDescription = "Attached image",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.size(64.dp),
+                                    )
+                                }
+                            }
+                            Box(
+                                Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(3.dp)
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.65f))
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) { onRemoveImage(i) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Rounded.Close, "Remove image", Modifier.size(12.dp), tint = Ink.White)
+                            }
+                        }
+                    }
+                }
+            }
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -74,6 +126,17 @@ fun InputBar(
                     .padding(6.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
+                if (canAttach) {
+                    GhostIconButton(
+                        Icons.Rounded.Add,
+                        "Attach image",
+                        onClick = onAddImage,
+                        size = 40.dp,
+                        iconSize = 20.dp,
+                        tint = Ink.I300,
+                        modifier = Modifier.padding(bottom = 2.dp),
+                    )
+                }
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
@@ -81,7 +144,14 @@ fun InputBar(
                     cursorBrush = SolidColor(Ink.White),
                     maxLines = 7,
                     decorationBox = { inner ->
-                        Box(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                        Box(
+                            Modifier.padding(
+                                start = if (canAttach) 4.dp else 14.dp,
+                                end = 8.dp,
+                                top = 12.dp,
+                                bottom = 12.dp,
+                            ),
+                        ) {
                             if (value.isEmpty()) {
                                 Text("Message Spettro…", color = Ink.I500, fontSize = 16.sp)
                             }
@@ -94,20 +164,12 @@ fun InputBar(
                 )
                 Spacer(Modifier.size(6.dp))
                 SendButton(
-                    hasContent = value.isNotBlank(),
+                    hasContent = value.isNotBlank() || attachments.isNotEmpty(),
                     isStreaming = isStreaming,
                     onSend = onSend,
                     onStop = onStop,
                 )
             }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Spettro can make mistakes. Verify important information.",
-                color = Ink.I500,
-                fontSize = 10.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
     }
 }

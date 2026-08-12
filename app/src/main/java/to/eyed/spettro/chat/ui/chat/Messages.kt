@@ -47,7 +47,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -81,27 +83,16 @@ fun MessagesList(
         EmptyState(onSuggestion, modifier)
         return
     }
+    // Reversed layout: index 0 sits at the visual bottom, so the newest
+    // content stays pinned while a reply streams in - the standard chat
+    // pattern, no scroll math needed.
     LazyColumn(
         state = listState,
+        reverseLayout = true,
         modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 140.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.Bottom),
     ) {
-        items(messages.size, key = { i -> "$i-${messages[i].at}" }) { i ->
-            val msg = messages[i]
-            val isLast = i == messages.size - 1
-            if (msg.role == "user") {
-                UserBubble(msg)
-            } else {
-                AssistantMessage(
-                    text = msg.content,
-                    reasoning = msg.thinking,
-                    streaming = false,
-                    showActions = isLast && stream is StreamState.Idle,
-                    onRegenerate = onRegenerate,
-                )
-            }
-        }
         when (stream) {
             is StreamState.Thinking -> item(key = "thinking") {
                 ThinkingIndicator(stream.reasoning, animations)
@@ -121,19 +112,55 @@ fun MessagesList(
             }
             else -> Unit
         }
+        items(messages.size, key = { idx -> "${messages.size - 1 - idx}-${messages[messages.size - 1 - idx].at}" }) { idx ->
+            val i = messages.size - 1 - idx
+            val msg = messages[i]
+            val isLast = i == messages.size - 1
+            if (msg.role == "user") {
+                UserBubble(msg)
+            } else {
+                AssistantMessage(
+                    text = msg.content,
+                    reasoning = msg.thinking,
+                    streaming = false,
+                    showActions = isLast && stream is StreamState.Idle,
+                    onRegenerate = onRegenerate,
+                )
+            }
+        }
     }
 }
 
 @Composable
 private fun UserBubble(msg: StoredMessage) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
-        Box(
-            Modifier
-                .widthIn(max = 300.dp)
-                .surfaceHigh(RoundedCornerShape(Radii.card))
-                .padding(horizontal = 18.dp, vertical = 12.dp),
-        ) {
-            Text(msg.content, color = Ink.White, fontSize = 15.sp, lineHeight = 22.sp)
+        if (msg.images.isNotEmpty()) {
+            val bitmaps = remember(msg.images) {
+                msg.images.mapNotNull { to.eyed.spettro.chat.data.ImageUtil.decodeDataUrl(it) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                bitmaps.forEach { bmp ->
+                    androidx.compose.foundation.Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = "Attached image",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier
+                            .size(160.dp)
+                            .clip(RoundedCornerShape(Radii.row)),
+                    )
+                }
+            }
+            if (msg.content.isNotBlank()) Spacer(Modifier.height(8.dp))
+        }
+        if (msg.content.isNotBlank()) {
+            Box(
+                Modifier
+                    .widthIn(max = 300.dp)
+                    .surfaceHigh(RoundedCornerShape(Radii.card))
+                    .padding(horizontal = 18.dp, vertical = 12.dp),
+            ) {
+                Text(msg.content, color = Ink.White, fontSize = 15.sp, lineHeight = 22.sp)
+            }
         }
     }
 }
