@@ -24,16 +24,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.ChevronUp
 import com.composables.icons.lucide.CircleAlert
 import com.composables.icons.lucide.Clock
@@ -48,6 +52,7 @@ import com.composables.icons.lucide.Smartphone
 import com.composables.icons.lucide.Wrench
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -98,6 +103,10 @@ fun MessagesList(
         EmptyState(isTemporary, modifier)
         return
     }
+    // Tapping a tool row opens its full response here — a sheet, so the
+    // transcript itself stays clean.
+    var inspectedTool by remember { mutableStateOf<ToolRunUi?>(null) }
+    inspectedTool?.let { ToolDetailSheet(it) { inspectedTool = null } }
     // Reversed layout: index 0 sits at the visual bottom, so the newest
     // content stays pinned while a reply streams in - the standard chat
     // pattern, no scroll math needed.
@@ -117,7 +126,7 @@ fun MessagesList(
         }
         when (stream) {
             is StreamState.Thinking -> item(key = "thinking") {
-                ThinkingIndicator(stream.reasoning, stream.tools, animations)
+                ThinkingIndicator(stream.reasoning, stream.tools, animations) { inspectedTool = it }
             }
             is StreamState.Streaming -> item(key = "streaming") {
                 AssistantMessage(
@@ -128,6 +137,7 @@ fun MessagesList(
                     showActions = false,
                     onRegenerate = {},
                     animations = animations,
+                    onInspectTool = { inspectedTool = it },
                 )
             }
             is StreamState.RateLimited -> item(key = "ratelimited") {
@@ -153,11 +163,14 @@ fun MessagesList(
                     text = msg.content,
                     reasoning = msg.thinking,
                     tools = remember(msg.tools) {
-                        msg.tools.map { ToolRunUi(it.name, it.label, running = false, failed = !it.ok) }
+                        msg.tools.map {
+                            ToolRunUi(it.name, it.label, running = false, failed = !it.ok, output = it.output)
+                        }
                     },
                     streaming = false,
                     showActions = isLast && stream is StreamState.Idle,
                     onRegenerate = onRegenerate,
+                    onInspectTool = { inspectedTool = it },
                 )
             }
         }
@@ -209,6 +222,7 @@ private fun AssistantMessage(
     showActions: Boolean,
     onRegenerate: () -> Unit,
     animations: Boolean = true,
+    onInspectTool: (ToolRunUi) -> Unit = {},
 ) {
     val context = LocalContext.current
     Column(Modifier.fillMaxWidth()) {
@@ -217,7 +231,7 @@ private fun AssistantMessage(
             Spacer(Modifier.height(10.dp))
         }
         if (tools.isNotEmpty()) {
-            ToolActivityList(tools, animations)
+            ToolActivityList(tools, animations, onInspectTool)
             Spacer(Modifier.height(10.dp))
         }
         MarkdownBody(text)
@@ -282,23 +296,56 @@ private fun ReasoningPanel(reasoning: String, live: Boolean) {
             )
         }
         AnimatedVisibility(expanded || live, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-            Text(
-                if (live) reasoning.takeLast(600) else reasoning,
-                fontSize = 13.sp,
-                lineHeight = 19.sp,
-                color = Ink.I500,
-                modifier = Modifier.padding(top = 10.dp),
-            )
+            if (live && !expanded) {
+                // Full text in a window that follows the tail — no truncation,
+                // so earlier thinking never visibly "slides" away.
+                val scroll = rememberScrollState()
+                LaunchedEffect(reasoning.length) {
+                    scroll.scrollTo(Int.MAX_VALUE)
+                }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                        .heightIn(max = 180.dp)
+                        .verticalScroll(scroll),
+                ) {
+                    Text(reasoning, fontSize = 13.sp, lineHeight = 19.sp, color = Ink.I500)
+                }
+            } else {
+                Text(
+                    reasoning,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    color = Ink.I500,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+            }
         }
     }
 }
 
-/** One row per tool call: icon, quiet label, pulsing dots while running. */
+/**
+ * One row per tool call: icon, quiet label, pulsing dots while running.
+ * A finished row is tappable and opens the full response in a sheet.
+ */
 @Composable
-private fun ToolActivityList(tools: List<ToolRunUi>, animations: Boolean) {
+private fun ToolActivityList(
+    tools: List<ToolRunUi>,
+    animations: Boolean,
+    onInspect: (ToolRunUi) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         tools.forEach { run ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            val inspectable = !run.running && run.output.isNotBlank()
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    enabled = inspectable,
+                ) { onInspect(run) },
+            ) {
                 Icon(
                     toolIcon(run),
                     contentDescription = null,
@@ -316,12 +363,16 @@ private fun ToolActivityList(tools: List<ToolRunUi>, animations: Boolean) {
                     Spacer(Modifier.width(8.dp))
                     PulsingDots(animations)
                 }
+                if (inspectable) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Lucide.ChevronRight, null, Modifier.size(13.dp), tint = Ink.I500)
+                }
             }
         }
     }
 }
 
-private fun toolIcon(run: ToolRunUi) = when {
+internal fun toolIcon(run: ToolRunUi) = when {
     run.failed -> Lucide.CircleAlert
     run.name == ToolRegistry.WEB_SEARCH -> Lucide.Globe
     run.name == ToolRegistry.WEB_FETCH -> Lucide.Link
@@ -334,7 +385,12 @@ private fun toolIcon(run: ToolRunUi) = when {
 
 /** ChatGPT-style pulsing dot while waiting for the first token. */
 @Composable
-private fun ThinkingIndicator(reasoning: String, tools: List<ToolRunUi>, animations: Boolean) {
+private fun ThinkingIndicator(
+    reasoning: String,
+    tools: List<ToolRunUi>,
+    animations: Boolean,
+    onInspectTool: (ToolRunUi) -> Unit = {},
+) {
     if (reasoning.isNotBlank() || tools.isNotEmpty()) {
         Column {
             if (reasoning.isNotBlank()) {
@@ -342,7 +398,7 @@ private fun ThinkingIndicator(reasoning: String, tools: List<ToolRunUi>, animati
             }
             if (tools.isNotEmpty()) {
                 if (reasoning.isNotBlank()) Spacer(Modifier.height(10.dp))
-                ToolActivityList(tools, animations)
+                ToolActivityList(tools, animations, onInspectTool)
             }
         }
         return

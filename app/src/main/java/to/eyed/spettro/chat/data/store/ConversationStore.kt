@@ -17,6 +17,8 @@ data class StoredToolRun(
     val name: String,
     val label: String,
     val ok: Boolean = true,
+    /** The tool's response, kept so the user can inspect it later. */
+    val output: String = "",
 )
 
 @Serializable

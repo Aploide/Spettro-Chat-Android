@@ -31,6 +31,8 @@ data class ToolRunUi(
     val label: String,
     val running: Boolean,
     val failed: Boolean = false,
+    /** The full tool response, inspectable by the user; empty while running. */
+    val output: String = "",
 )
 
 sealed interface StreamState {
@@ -120,6 +122,9 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
 
         /** After this many tool rounds the request goes out without tools, forcing an answer. */
         const val MAX_TOOL_ROUNDS = 6
+
+        /** Minimum gap between stream-state publishes while tokens arrive. */
+        const val PUBLISH_INTERVAL_MS = 80L
 
         val SYSTEM_PROMPT = """
             You are Spettro, a helpful assistant running on an Android phone.
@@ -374,12 +379,21 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
             val reasoningAcc = StringBuilder()
             val toolRuns = mutableListOf<ToolRunUi>()
 
+            var lastPublish = 0L
+
             fun publish() {
+                lastPublish = System.currentTimeMillis()
                 _stream.value = if (textAcc.isEmpty()) {
                     StreamState.Thinking(reasoningAcc.toString(), toolRuns.toList())
                 } else {
                     StreamState.Streaming(textAcc.toString(), reasoningAcc.toString(), toolRuns.toList())
                 }
+            }
+
+            // Token deltas arrive faster than markdown can re-parse without
+            // flicker; batching them keeps the stream visually stable.
+            fun publishThrottled() {
+                if (System.currentTimeMillis() - lastPublish >= PUBLISH_INTERVAL_MS) publish()
             }
 
             try {
@@ -393,12 +407,12 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                         when (event) {
                             is ChatEvent.Reasoning -> {
                                 reasoningAcc.append(event.delta)
-                                publish()
+                                publishThrottled()
                             }
                             is ChatEvent.Text -> {
                                 roundText.append(event.delta)
                                 textAcc.append(event.delta)
-                                publish()
+                                publishThrottled()
                             }
                             is ChatEvent.ToolCallStart -> {
                                 // Show activity as soon as the model commits
@@ -414,6 +428,8 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                             is ChatEvent.Done -> Unit
                         }
                     }
+                    // Flush whatever the throttle was still holding back.
+                    publish()
                     if (calls.isEmpty()) break
                     round++
                     // Interim text ("Let me check…") stays visible; separate
@@ -439,6 +455,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                             doneLabel,
                             running = false,
                             failed = result.isError,
+                            output = result.output,
                         )
                         publish()
                         history += OutgoingMessage(role = "tool", text = result.output, toolCallId = call.id)
@@ -494,7 +511,10 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun List<ToolRunUi>.toStored(): List<StoredToolRun> =
-        filter { !it.running }.map { StoredToolRun(it.name, it.label, ok = !it.failed) }
+        filter { !it.running }.map {
+            // Cap stored outputs so a fetched page can't bloat the chat file.
+            StoredToolRun(it.name, it.label, ok = !it.failed, output = it.output.take(20_000))
+        }
 
     private fun appendAssistant(text: String, reasoning: String, tools: List<StoredToolRun> = emptyList()) {
         val id = _activeId.value ?: return
