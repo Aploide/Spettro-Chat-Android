@@ -1,8 +1,5 @@
 package to.eyed.spettro.chat.ui.chat
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -31,6 +29,7 @@ import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.Lucide
 import to.eyed.spettro.chat.ui.components.GhostIconButton
 import to.eyed.spettro.chat.ui.components.Hairline
+import to.eyed.spettro.chat.ui.components.copyToClipboard
 import to.eyed.spettro.chat.ui.theme.Ink
 import to.eyed.spettro.chat.ui.theme.MonoBody
 import to.eyed.spettro.chat.vm.ToolRunUi
@@ -68,14 +67,11 @@ fun ToolDetailSheet(run: ToolRunUi, onDismiss: () -> Unit) {
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                val context = androidx.compose.ui.platform.LocalContext.current
+                val context = LocalContext.current
                 GhostIconButton(
                     Lucide.Copy,
                     "Copy response",
-                    onClick = {
-                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        cm.setPrimaryClip(ClipData.newPlainText("Tool response", run.output))
-                    },
+                    onClick = { copyToClipboard(context, run.output, "Tool response") },
                     size = 34.dp,
                     iconSize = 15.dp,
                 )

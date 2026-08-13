@@ -1,48 +1,23 @@
 package to.eyed.spettro.chat.data.tools
 
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
-import android.os.BatteryManager
-import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import to.eyed.spettro.chat.data.api.ToolCallData
 import to.eyed.spettro.chat.data.api.ToolSpec
 import java.net.URL
-import java.net.URLDecoder
-import java.net.URLEncoder
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 data class ToolResult(val output: String, val isError: Boolean = false)
 
 /**
  * The tools offered to the model on every chat request, mirroring the CLI's
  * native tool calling (internal/agent/llm_runtime_prompt.go) trimmed to what
- * makes sense on a phone: web search + fetch (same DuckDuckGo scrape as the
- * CLI's web-search), live clock, and device status.
+ * makes sense on a phone. This file owns the specs, labels, and dispatch;
+ * implementations live in [WebTools], [DeviceTools], and AskUser.kt.
  */
-class ToolRegistry(private val context: Context) {
-    private val json = Json { ignoreUnknownKeys = true }
-
-    // Same UA as the CLI's agent fetches, so DDG treats both alike.
-    private val http = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
+class ToolRegistry(context: Context) {
+    private val web = WebTools()
+    private val device = DeviceTools(context)
 
     companion object {
         const val WEB_SEARCH = "web-search"
@@ -51,11 +26,6 @@ class ToolRegistry(private val context: Context) {
         const val DEVICE_INFO = "device-info"
         const val ASK_USER = "ask-user"
         const val COMMENT = "comment"
-
-        private const val FETCH_UA = "Spettro Agent/1.0"
-        private const val SEARCH_BODY_CAP = 512 * 1024
-        private const val FETCH_BODY_CAP = 2 * 1024 * 1024
-        private const val FETCH_TEXT_DEFAULT = 20_000
     }
 
     val specs: List<ToolSpec> = listOf(
@@ -134,18 +104,15 @@ class ToolRegistry(private val context: Context) {
         else -> "Ran $name"
     }
 
-    private fun commentMessage(argumentsJson: String): String? =
-        stringArg(argumentsJson, "message")?.take(300)
-
     suspend fun execute(call: ToolCallData): ToolResult = withContext(Dispatchers.IO) {
         try {
             when (call.name) {
-                WEB_SEARCH -> webSearch(call.arguments)
-                WEB_FETCH -> webFetch(call.arguments)
-                CURRENT_TIME -> currentTime(call.arguments)
-                DEVICE_INFO -> deviceInfo()
+                WEB_SEARCH -> web.search(call.arguments)
+                WEB_FETCH -> web.fetch(call.arguments)
+                CURRENT_TIME -> device.currentTime(call.arguments)
+                DEVICE_INFO -> device.deviceInfo()
                 // The CLI echoes the message back verbatim as the result.
-                COMMENT -> ToolResult(stringArg(call.arguments, "message") ?: "")
+                COMMENT -> ToolResult(ToolArgs.string(call.arguments, "message") ?: "")
                 // ask-user blocks on the person; the ViewModel intercepts it
                 // before execution ever reaches the registry.
                 ASK_USER -> ToolResult("error: ask-user: interactive callback not configured", isError = true)
@@ -156,171 +123,12 @@ class ToolRegistry(private val context: Context) {
         }
     }
 
-    // --- Argument helpers ---
-
-    private fun args(argumentsJson: String) =
-        runCatching { json.parseToJsonElement(argumentsJson).jsonObject }.getOrNull()
-
-    private fun stringArg(argumentsJson: String, key: String): String? =
-        args(argumentsJson)?.get(key)?.jsonPrimitive?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
-
-    private fun intArg(argumentsJson: String, key: String): Int? =
-        args(argumentsJson)?.get(key)?.jsonPrimitive?.intOrNull
+    private fun commentMessage(argumentsJson: String): String? =
+        ToolArgs.string(argumentsJson, "message")?.take(300)
 
     private fun quotedArg(argumentsJson: String, key: String): String? =
-        stringArg(argumentsJson, key)?.let { "“${it.take(60)}”" }
+        ToolArgs.string(argumentsJson, key)?.let { "“${it.take(60)}”" }
 
     private fun hostArg(argumentsJson: String): String? =
-        stringArg(argumentsJson, "url")?.let { runCatching { URL(it).host }.getOrNull() }
-
-    // --- web-search: the CLI's DuckDuckGo HTML scrape, plus snippets ---
-
-    private val resultAnchor = Regex(
-        """<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)</a>""",
-        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
-    )
-    private val resultSnippet = Regex(
-        """<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>""",
-        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
-    )
-
-    private fun webSearch(argumentsJson: String): ToolResult {
-        val query = stringArg(argumentsJson, "query")
-            ?: return ToolResult("web-search requires a \"query\" argument", isError = true)
-        val max = (intArg(argumentsJson, "max_results") ?: 10).coerceIn(1, 25)
-        val url = "https://html.duckduckgo.com/html/?q=" + URLEncoder.encode(query, "UTF-8")
-        val req = Request.Builder().url(url).header("User-Agent", FETCH_UA).get().build()
-        http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) return ToolResult("search failed: HTTP ${resp.code}", isError = true)
-            val body = resp.body.byteStream().readNBytesCompat(SEARCH_BODY_CAP).decodeToString()
-            val snippets = resultSnippet.findAll(body).map { htmlToText(it.groupValues[1]) }.toList()
-            val lines = resultAnchor.findAll(body).take(max).mapIndexedNotNull { i, m ->
-                val dest = resolveDuckDuckGoUrl(m.groupValues[1]) ?: return@mapIndexedNotNull null
-                val title = htmlToText(m.groupValues[2])
-                val snippet = snippets.getOrNull(i)?.takeIf { it.isNotBlank() }
-                buildString {
-                    append(title).append(" — ").append(dest)
-                    if (snippet != null) append("\n  ").append(snippet.take(300))
-                }
-            }.toList()
-            if (lines.isEmpty()) return ToolResult("No results found for: $query")
-            return ToolResult(lines.joinToString("\n"))
-        }
-    }
-
-    /** Unwraps DDG's `/l/?uddg=<encoded>` redirect to the real destination. */
-    private fun resolveDuckDuckGoUrl(href: String): String? {
-        val raw = htmlToText(href)
-        if (!raw.contains("uddg=")) {
-            return raw.takeIf { it.startsWith("http") }
-        }
-        val encoded = raw.substringAfter("uddg=").substringBefore("&")
-        return runCatching { URLDecoder.decode(encoded, "UTF-8") }.getOrNull()?.takeIf { it.startsWith("http") }
-    }
-
-    // --- web-fetch ---
-
-    private fun webFetch(argumentsJson: String): ToolResult {
-        val url = stringArg(argumentsJson, "url")
-            ?: return ToolResult("web-fetch requires a \"url\" argument", isError = true)
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            return ToolResult("only http(s) URLs can be fetched", isError = true)
-        }
-        val maxLen = (intArg(argumentsJson, "max_length") ?: FETCH_TEXT_DEFAULT).coerceIn(500, 100_000)
-        val req = Request.Builder()
-            .url(url)
-            .header("User-Agent", FETCH_UA)
-            .header("Accept", "text/html, text/plain, application/json, application/xml;q=0.9, */*;q=0.5")
-            .get()
-            .build()
-        http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) return ToolResult("fetch failed: HTTP ${resp.code}", isError = true)
-            val type = resp.header("Content-Type").orEmpty().lowercase()
-            if (listOf("image/", "video/", "audio/", "application/octet-stream").any { type.startsWith(it) }) {
-                return ToolResult("cannot read binary content ($type)", isError = true)
-            }
-            val body = resp.body.byteStream().readNBytesCompat(FETCH_BODY_CAP).decodeToString()
-            val text = if (type.contains("html") || body.trimStart().startsWith("<")) htmlToText(body) else body
-            val out = text.trim()
-            if (out.isEmpty()) return ToolResult("the page had no readable text", isError = true)
-            return ToolResult(if (out.length > maxLen) out.take(maxLen) + "\n[truncated]" else out)
-        }
-    }
-
-    // --- current-time ---
-
-    private fun currentTime(argumentsJson: String): ToolResult {
-        val zone = stringArg(argumentsJson, "timezone")?.let {
-            runCatching { ZoneId.of(it) }.getOrNull()
-                ?: return ToolResult("unknown timezone: $it", isError = true)
-        } ?: ZoneId.systemDefault()
-        val now = ZonedDateTime.now(zone)
-        val fmt = DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy 'at' HH:mm:ss zzz", Locale.getDefault())
-        val utc = now.withZoneSameInstant(ZoneId.of("UTC"))
-            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss 'UTC'"))
-        return ToolResult("${now.format(fmt)} (${zone.id})\n$utc")
-    }
-
-    // --- device-info ---
-
-    private fun deviceInfo(): ToolResult {
-        val lines = mutableListOf<String>()
-        val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        if (battery != null) {
-            val level = battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-            val scale = battery.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-            val status = battery.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
-            val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                status == BatteryManager.BATTERY_STATUS_FULL
-            if (level >= 0 && scale > 0) {
-                lines += "Battery: ${level * 100 / scale}%" + if (charging) " (charging)" else ""
-            }
-        }
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
-        lines += "Network: " + when {
-            caps == null -> "offline"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
-            else -> "connected"
-        }
-        lines += "Device: ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})"
-        lines += "Locale: ${Locale.getDefault().toLanguageTag()}"
-        lines += "Timezone: ${ZoneId.systemDefault().id}"
-        return ToolResult(lines.joinToString("\n"))
-    }
-
-    // --- HTML helpers ---
-
-    private val scriptOrStyle = Regex(
-        """<(script|style|noscript)[^>]*>.*?</\1>""",
-        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
-    )
-    private val tag = Regex("<[^>]+>")
-
-    private fun htmlToText(html: String): String =
-        html.replace(scriptOrStyle, " ")
-            .replace(Regex("(?i)<br[^>]*>"), "\n")
-            .replace(Regex("(?i)</(p|div|li|h[1-6]|tr)>"), "\n")
-            .replace(tag, " ")
-            .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-            .replace("&quot;", "\"").replace("&#x27;", "'").replace("&#39;", "'")
-            .replace("&nbsp;", " ")
-            .lines().joinToString("\n") { it.trim().replace(Regex(" {2,}"), " ") }
-            .replace(Regex("\n{3,}"), "\n\n")
-            .trim()
-}
-
-/** Reads up to [cap] bytes; InputStream.readNBytes needs API 33 on some paths. */
-private fun java.io.InputStream.readNBytesCompat(cap: Int): ByteArray {
-    val buf = java.io.ByteArrayOutputStream()
-    val chunk = ByteArray(16 * 1024)
-    var total = 0
-    while (total < cap) {
-        val n = read(chunk, 0, minOf(chunk.size, cap - total))
-        if (n < 0) break
-        buf.write(chunk, 0, n)
-        total += n
-    }
-    return buf.toByteArray()
+        ToolArgs.string(argumentsJson, "url")?.let { runCatching { URL(it).host }.getOrNull() }
 }

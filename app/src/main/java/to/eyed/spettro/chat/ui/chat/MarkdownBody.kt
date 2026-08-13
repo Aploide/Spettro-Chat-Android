@@ -1,8 +1,5 @@
 package to.eyed.spettro.chat.ui.chat
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -51,6 +48,7 @@ import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.markdownDimens
 import to.eyed.spettro.chat.ui.components.Hairline
+import to.eyed.spettro.chat.ui.components.copyToClipboard
 import to.eyed.spettro.chat.ui.theme.Ink
 import to.eyed.spettro.chat.ui.theme.MonoBody
 import to.eyed.spettro.chat.ui.theme.whiteA
@@ -156,12 +154,7 @@ private fun MonoCodeBlock(code: String, language: String?) {
                 color = Ink.I500,
                 modifier = Modifier.weight(1f),
             )
-            CopyChip(
-                onCopy = {
-                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("Code", code.trimEnd('\n')))
-                },
-            )
+            CopyChip(onCopy = { copyToClipboard(context, code.trimEnd('\n'), "Code") })
         }
         Hairline()
         Box(Modifier.horizontalScroll(rememberScrollState())) {
