@@ -42,10 +42,42 @@ data class Account(
 
 // --- Chat completions (OpenAI-compatible SSE) ---
 
+/**
+ * A tool offered to the model, in the standard OpenAI function-tool shape.
+ * [parametersJson] is the raw JSON Schema for the arguments object.
+ */
+data class ToolSpec(
+    val name: String,
+    val description: String,
+    val parametersJson: String,
+)
+
+/** A tool invocation requested by the model; [arguments] is a JSON-encoded string. */
+data class ToolCallData(
+    val id: String,
+    val name: String,
+    val arguments: String,
+)
+
+@Serializable
+data class StreamToolCallFunction(
+    val name: String? = null,
+    val arguments: String? = null,
+)
+
+/** One fragment of a streamed tool call; fragments are joined by [index]. */
+@Serializable
+data class StreamToolCallDelta(
+    val index: Int = 0,
+    val id: String? = null,
+    val function: StreamToolCallFunction = StreamToolCallFunction(),
+)
+
 @Serializable
 data class StreamDelta(
     val content: String? = null,
     @SerialName("reasoning_content") val reasoningContent: String? = null,
+    @SerialName("tool_calls") val toolCalls: List<StreamToolCallDelta> = emptyList(),
 )
 
 @Serializable
@@ -69,10 +101,21 @@ data class StreamChunk(
 
 // Non-streaming fallback response
 @Serializable
+data class WireToolCallFunction(val name: String = "", val arguments: String = "")
+
+@Serializable
+data class WireToolCall(
+    val id: String = "",
+    val type: String = "function",
+    val function: WireToolCallFunction = WireToolCallFunction(),
+)
+
+@Serializable
 data class CompletionMessage(
     val role: String = "assistant",
     val content: String? = null,
     @SerialName("reasoning_content") val reasoningContent: String? = null,
+    @SerialName("tool_calls") val toolCalls: List<WireToolCall> = emptyList(),
 )
 
 @Serializable
@@ -84,17 +127,27 @@ data class CompletionResponse(
     val usage: UsageInfo? = null,
 )
 
-/** One outgoing chat message; images are data URLs for vision models. */
+/**
+ * One outgoing chat message; images are data URLs for vision models.
+ * An assistant message may carry [toolCalls]; a `role:"tool"` result names
+ * the call it answers via [toolCallId].
+ */
 data class OutgoingMessage(
     val role: String,
     val text: String,
     val imageDataUrls: List<String> = emptyList(),
+    val toolCalls: List<ToolCallData> = emptyList(),
+    val toolCallId: String? = null,
 )
 
 /** Incremental events from a streamed completion. */
 sealed interface ChatEvent {
     data class Text(val delta: String) : ChatEvent
     data class Reasoning(val delta: String) : ChatEvent
+    /** The model began emitting a tool call; arguments are still streaming. */
+    data class ToolCallStart(val name: String) : ChatEvent
+    /** A fully-assembled tool call. All calls of the turn arrive before [Done]. */
+    data class ToolCall(val call: ToolCallData) : ChatEvent
     data class RateLimited(val retryAfterSeconds: Int) : ChatEvent
     data class Usage(val info: UsageInfo) : ChatEvent
     data object Done : ChatEvent

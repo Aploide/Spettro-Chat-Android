@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableSharedFlow
 import to.eyed.spettro.chat.data.api.SpettroApi
 import to.eyed.spettro.chat.data.store.ConversationStore
+import to.eyed.spettro.chat.data.tools.ToolRegistry
 
 /** Manual DI: one instance of each service, shared by the ViewModels. */
 class AppContainer(context: Context) {
@@ -13,6 +14,7 @@ class AppContainer(context: Context) {
         apiKeyProvider = { prefs.apiKey },
     )
     val conversations = ConversationStore(context.applicationContext)
+    val tools = ToolRegistry(context.applicationContext)
 
     /** Emitted when any API call returns 401 — the session must be re-established. */
     val unauthorized = MutableSharedFlow<Unit>(extraBufferCapacity = 1)

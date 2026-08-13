@@ -69,6 +69,7 @@ fun ChatRoot(
     val conversations by chatVm.conversations.collectAsState()
     val activeId by chatVm.activeId.collectAsState()
     val stream by chatVm.stream.collectAsState()
+    val askForm by chatVm.askForm.collectAsState()
     val tempChat by chatVm.tempChat.collectAsState()
     val isTemporary by chatVm.isTemporary.collectAsState()
 
@@ -102,7 +103,7 @@ fun ChatRoot(
     // The list is reversed (index 0 = bottom), so following the stream just
     // means snapping to 0 - and only when the user is already near the
     // bottom, so scrolling back to read isn't fought.
-    LaunchedEffect(messages.size, stream) {
+    LaunchedEffect(messages.size, stream, askForm) {
         if (listState.isScrollInProgress) return@LaunchedEffect
         if (listState.firstVisibleItemIndex <= 1) listState.scrollToItem(0)
     }
@@ -155,10 +156,13 @@ fun ChatRoot(
                 MessagesList(
                     messages = messages,
                     stream = stream,
+                    askForm = askForm,
                     listState = listState,
                     animations = streamingAnimationsOn,
                     isTemporary = isTemporary,
                     onRegenerate = { chatVm.regenerate(selectedModel, thinking) },
+                    onSubmitAnswers = chatVm::submitAnswers,
+                    onDeclineQuestions = chatVm::declineQuestions,
                     modifier = Modifier.fillMaxSize(),
                 )
                 // Near the model's context ceiling the composer is replaced

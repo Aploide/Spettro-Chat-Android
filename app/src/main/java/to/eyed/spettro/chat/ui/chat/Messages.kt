@@ -35,9 +35,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronUp
+import com.composables.icons.lucide.CircleAlert
+import com.composables.icons.lucide.Clock
 import com.composables.icons.lucide.Copy
+import com.composables.icons.lucide.Globe
+import com.composables.icons.lucide.Info
+import com.composables.icons.lucide.Link
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.MessageCircleQuestion
 import com.composables.icons.lucide.RefreshCw
+import com.composables.icons.lucide.Smartphone
+import com.composables.icons.lucide.Wrench
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -56,6 +64,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import to.eyed.spettro.chat.data.store.StoredMessage
+import to.eyed.spettro.chat.data.tools.AskAnswer
+import to.eyed.spettro.chat.data.tools.AskForm
+import to.eyed.spettro.chat.data.tools.ToolRegistry
 import to.eyed.spettro.chat.ui.components.GhostIconButton
 import to.eyed.spettro.chat.ui.components.LiquidMark
 import to.eyed.spettro.chat.ui.components.surfaceHigh
@@ -63,6 +74,7 @@ import to.eyed.spettro.chat.ui.components.surfaceLow
 import to.eyed.spettro.chat.ui.theme.Ink
 import to.eyed.spettro.chat.ui.theme.Radii
 import to.eyed.spettro.chat.vm.StreamState
+import to.eyed.spettro.chat.vm.ToolRunUi
 
 private fun copyToClipboard(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -73,10 +85,13 @@ private fun copyToClipboard(context: Context, text: String) {
 fun MessagesList(
     messages: List<StoredMessage>,
     stream: StreamState,
+    askForm: AskForm?,
     listState: LazyListState,
     animations: Boolean,
     isTemporary: Boolean,
     onRegenerate: () -> Unit,
+    onSubmitAnswers: (List<AskAnswer>) -> Unit,
+    onDeclineQuestions: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (messages.isEmpty() && stream is StreamState.Idle) {
@@ -93,14 +108,22 @@ fun MessagesList(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.Bottom),
     ) {
+        // First item renders at the visual bottom: the form sits closest to
+        // the input, right where the user is about to act.
+        if (askForm != null) {
+            item(key = "askform") {
+                QuestionCard(askForm, onSubmitAnswers, onDeclineQuestions)
+            }
+        }
         when (stream) {
             is StreamState.Thinking -> item(key = "thinking") {
-                ThinkingIndicator(stream.reasoning, animations)
+                ThinkingIndicator(stream.reasoning, stream.tools, animations)
             }
             is StreamState.Streaming -> item(key = "streaming") {
                 AssistantMessage(
                     text = stream.text,
                     reasoning = stream.reasoning,
+                    tools = stream.tools,
                     streaming = true,
                     showActions = false,
                     onRegenerate = {},
@@ -112,7 +135,7 @@ fun MessagesList(
             }
             is StreamState.Compacting -> item(key = "compacting") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    ThinkingIndicator("", animations)
+                    ThinkingIndicator("", emptyList(), animations)
                     Spacer(Modifier.width(12.dp))
                     Text("Compacting conversation…", fontSize = 14.sp, color = Ink.I300)
                 }
@@ -129,6 +152,9 @@ fun MessagesList(
                 AssistantMessage(
                     text = msg.content,
                     reasoning = msg.thinking,
+                    tools = remember(msg.tools) {
+                        msg.tools.map { ToolRunUi(it.name, it.label, running = false, failed = !it.ok) }
+                    },
                     streaming = false,
                     showActions = isLast && stream is StreamState.Idle,
                     onRegenerate = onRegenerate,
@@ -178,6 +204,7 @@ private fun UserBubble(msg: StoredMessage) {
 private fun AssistantMessage(
     text: String,
     reasoning: String,
+    tools: List<ToolRunUi>,
     streaming: Boolean,
     showActions: Boolean,
     onRegenerate: () -> Unit,
@@ -187,6 +214,10 @@ private fun AssistantMessage(
     Column(Modifier.fillMaxWidth()) {
         if (reasoning.isNotBlank()) {
             ReasoningPanel(reasoning, live = streaming && text.isBlank())
+            Spacer(Modifier.height(10.dp))
+        }
+        if (tools.isNotEmpty()) {
+            ToolActivityList(tools, animations)
             Spacer(Modifier.height(10.dp))
         }
         MarkdownBody(text)
@@ -262,11 +293,58 @@ private fun ReasoningPanel(reasoning: String, live: Boolean) {
     }
 }
 
+/** One row per tool call: icon, quiet label, pulsing dots while running. */
+@Composable
+private fun ToolActivityList(tools: List<ToolRunUi>, animations: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        tools.forEach { run ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    toolIcon(run),
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = if (run.failed) Ink.I300 else Ink.I500,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    run.label,
+                    fontSize = 13.sp,
+                    color = if (run.running) Ink.I300 else Ink.I500,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (run.running) {
+                    Spacer(Modifier.width(8.dp))
+                    PulsingDots(animations)
+                }
+            }
+        }
+    }
+}
+
+private fun toolIcon(run: ToolRunUi) = when {
+    run.failed -> Lucide.CircleAlert
+    run.name == ToolRegistry.WEB_SEARCH -> Lucide.Globe
+    run.name == ToolRegistry.WEB_FETCH -> Lucide.Link
+    run.name == ToolRegistry.CURRENT_TIME -> Lucide.Clock
+    run.name == ToolRegistry.DEVICE_INFO -> Lucide.Smartphone
+    run.name == ToolRegistry.ASK_USER -> Lucide.MessageCircleQuestion
+    run.name == ToolRegistry.COMMENT -> Lucide.Info
+    else -> Lucide.Wrench
+}
+
 /** ChatGPT-style pulsing dot while waiting for the first token. */
 @Composable
-private fun ThinkingIndicator(reasoning: String, animations: Boolean) {
-    if (reasoning.isNotBlank()) {
-        ReasoningPanel(reasoning, live = true)
+private fun ThinkingIndicator(reasoning: String, tools: List<ToolRunUi>, animations: Boolean) {
+    if (reasoning.isNotBlank() || tools.isNotEmpty()) {
+        Column {
+            if (reasoning.isNotBlank()) {
+                ReasoningPanel(reasoning, live = true)
+            }
+            if (tools.isNotEmpty()) {
+                if (reasoning.isNotBlank()) Spacer(Modifier.height(10.dp))
+                ToolActivityList(tools, animations)
+            }
+        }
         return
     }
     val t = rememberInfiniteTransition(label = "pulse")

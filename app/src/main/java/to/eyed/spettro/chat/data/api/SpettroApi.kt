@@ -146,6 +146,7 @@ class SpettroApi(
         messages: List<OutgoingMessage>,
         reasoningEffort: String?,
         stream: Boolean,
+        tools: List<ToolSpec>,
     ): String {
         val obj = buildJsonObject {
             put("model", model)
@@ -154,8 +155,25 @@ class SpettroApi(
                     add(
                         buildJsonObject {
                             put("role", m.role)
+                            m.toolCallId?.let { put("tool_call_id", it) }
+                            if (m.toolCalls.isNotEmpty()) {
+                                putJsonArray("tool_calls") {
+                                    for (c in m.toolCalls) {
+                                        add(
+                                            buildJsonObject {
+                                                put("id", c.id)
+                                                put("type", "function")
+                                                putJsonObject("function") {
+                                                    put("name", c.name)
+                                                    put("arguments", c.arguments)
+                                                }
+                                            },
+                                        )
+                                    }
+                                }
+                            }
                             if (m.imageDataUrls.isEmpty()) {
-                                put("content", m.text)
+                                if (m.text.isNotEmpty() || m.toolCalls.isEmpty()) put("content", m.text)
                             } else {
                                 put(
                                     "content",
@@ -178,6 +196,24 @@ class SpettroApi(
                     )
                 }
             }
+            if (tools.isNotEmpty()) {
+                putJsonArray("tools") {
+                    for (t in tools) {
+                        add(
+                            buildJsonObject {
+                                put("type", "function")
+                                putJsonObject("function") {
+                                    put("name", t.name)
+                                    put("description", t.description)
+                                    put("parameters", json.parseToJsonElement(t.parametersJson))
+                                    put("strict", false)
+                                }
+                            },
+                        )
+                    }
+                }
+                put("tool_choice", "auto")
+            }
             if (!reasoningEffort.isNullOrBlank()) put("reasoning_effort", reasoningEffort)
             if (stream) {
                 put("stream", true)
@@ -197,6 +233,7 @@ class SpettroApi(
         model: String,
         messages: List<OutgoingMessage>,
         reasoningEffort: String? = null,
+        tools: List<ToolSpec> = emptyList(),
     ): Flow<ChatEvent> = flow {
         val key = apiKeyProvider() ?: throw UnauthorizedException()
         while (true) {
@@ -205,7 +242,7 @@ class SpettroApi(
                 .header("Authorization", "Bearer $key")
                 .header("User-Agent", USER_AGENT)
                 .header("Accept", "text/event-stream")
-                .post(chatBody(model, messages, reasoningEffort, stream = true).toRequestBody(jsonMedia))
+                .post(chatBody(model, messages, reasoningEffort, stream = true, tools = tools).toRequestBody(jsonMedia))
                 .build()
             val resp = streamClient.newCall(req).await()
             if (resp.code == 429) {
@@ -224,7 +261,7 @@ class SpettroApi(
                 resp.close()
                 // Retry once without streaming so a turn never dies just
                 // because live tokens were unavailable.
-                emitNonStreamed(model, messages, reasoningEffort, ApiException(resp.code, errBody))
+                emitNonStreamed(model, messages, reasoningEffort, tools, ApiException(resp.code, errBody))
                 return@flow
             }
             resp.use { streamBody(it) }
@@ -233,8 +270,18 @@ class SpettroApi(
         }
     }.flowOn(Dispatchers.IO)
 
+    /** Accumulates one streamed tool call; argument fragments are joined by index. */
+    private class ToolCallAcc {
+        var id = ""
+        var name = ""
+        val args = StringBuilder()
+    }
+
     private suspend fun kotlinx.coroutines.flow.FlowCollector<ChatEvent>.streamBody(resp: Response) {
         val source = resp.body.source()
+        // Tool calls stream as fragments keyed by index; they are only
+        // dispatched once the stream ends and every argument is complete.
+        val toolAcc = sortedMapOf<Int, ToolCallAcc>()
         while (true) {
             val line = source.readUtf8Line() ?: break
             if (!line.startsWith("data:")) continue
@@ -246,6 +293,19 @@ class SpettroApi(
             val delta = chunk.choices.firstOrNull()?.delta ?: continue
             delta.reasoningContent?.takeIf { it.isNotEmpty() }?.let { emit(ChatEvent.Reasoning(it)) }
             delta.content?.takeIf { it.isNotEmpty() }?.let { emit(ChatEvent.Text(it)) }
+            for (tc in delta.toolCalls) {
+                val acc = toolAcc.getOrPut(tc.index) { ToolCallAcc() }
+                tc.id?.takeIf { it.isNotEmpty() }?.let { acc.id = it }
+                tc.function.name?.takeIf { it.isNotEmpty() }?.let {
+                    if (acc.name.isEmpty()) emit(ChatEvent.ToolCallStart(it))
+                    acc.name += it
+                }
+                tc.function.arguments?.let { acc.args.append(it) }
+            }
+        }
+        for (acc in toolAcc.values) {
+            if (acc.name.isEmpty()) continue
+            emit(ChatEvent.ToolCall(ToolCallData(acc.id, acc.name, acc.args.toString())))
         }
     }
 
@@ -253,6 +313,7 @@ class SpettroApi(
         model: String,
         messages: List<OutgoingMessage>,
         reasoningEffort: String?,
+        tools: List<ToolSpec>,
         originalError: Exception,
     ) {
         val key = apiKeyProvider() ?: throw UnauthorizedException()
@@ -260,7 +321,7 @@ class SpettroApi(
             .url("$baseUrl/v1/chat/completions")
             .header("Authorization", "Bearer $key")
             .header("User-Agent", USER_AGENT)
-            .post(chatBody(model, messages, reasoningEffort, stream = false).toRequestBody(jsonMedia))
+            .post(chatBody(model, messages, reasoningEffort, stream = false, tools = tools).toRequestBody(jsonMedia))
             .build()
         val resp = try {
             client.newCall(req).await()
@@ -274,6 +335,11 @@ class SpettroApi(
             val msg = out.choices.firstOrNull()?.message
             msg?.reasoningContent?.takeIf { r -> r.isNotEmpty() }?.let { r -> emit(ChatEvent.Reasoning(r)) }
             msg?.content?.takeIf { c -> c.isNotEmpty() }?.let { c -> emit(ChatEvent.Text(c)) }
+            msg?.toolCalls?.forEach { tc ->
+                if (tc.function.name.isNotEmpty()) {
+                    emit(ChatEvent.ToolCall(ToolCallData(tc.id, tc.function.name, tc.function.arguments)))
+                }
+            }
             out.usage?.let { u -> emit(ChatEvent.Usage(u)) }
             emit(ChatEvent.Done)
         }

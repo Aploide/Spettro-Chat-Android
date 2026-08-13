@@ -11,6 +11,14 @@ import java.security.SecureRandom
 // Local-only persistence, mirroring the CLI's ~/.spettro/sessions/ layout.
 // The backend has no conversation sync API.
 
+/** A record of one tool the assistant used while producing a message. */
+@Serializable
+data class StoredToolRun(
+    val name: String,
+    val label: String,
+    val ok: Boolean = true,
+)
+
 @Serializable
 data class StoredMessage(
     val role: String, // "user" | "assistant"
@@ -19,6 +27,8 @@ data class StoredMessage(
     val at: Long,
     /** Attached images as data URLs (data:image/jpeg;base64,...). */
     val images: List<String> = emptyList(),
+    /** Tools the assistant ran during this turn, in order. */
+    val tools: List<StoredToolRun> = emptyList(),
 )
 
 @Serializable
