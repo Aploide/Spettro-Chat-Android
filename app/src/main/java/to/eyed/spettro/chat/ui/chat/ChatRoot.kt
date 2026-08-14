@@ -83,6 +83,8 @@ fun ChatRoot(
     val activeId by chatVm.activeId.collectAsState()
     val stream by chatVm.stream.collectAsState()
     val askForm by chatVm.askForm.collectAsState()
+    val consentPending by chatVm.consentPending.collectAsState()
+    val permissionPending by chatVm.permissionPending.collectAsState()
     val tempChat by chatVm.tempChat.collectAsState()
     val isTemporary by chatVm.isTemporary.collectAsState()
 
@@ -98,6 +100,14 @@ fun ChatRoot(
     var attachments by remember { mutableStateOf(listOf<PendingImage>()) }
     var showSettings by remember { mutableStateOf(false) }
     var showModelSheet by remember { mutableStateOf(false) }
+    var showMcpSheet by remember { mutableStateOf(false) }
+    var showSkillsSheet by remember { mutableStateOf(false) }
+    var showSkillPicker by remember { mutableStateOf(false) }
+
+    // Skills: the active one comes from the conversation (or, before the
+    // first message, from the engine's pending pick).
+    val allSkills by chatVm.skills.collectAsState(initial = emptyList())
+    val pendingSkillId by chatVm.pendingSkillId.collectAsState()
     val listState = rememberLazyListState()
 
     val exportChatsLauncher = rememberLauncherForActivityResult(
@@ -117,6 +127,32 @@ fun ChatRoot(
         }
     }
 
+    // The run's progress/completion notifications need POST_NOTIFICATIONS on
+    // 33+; asked at first send, and denial never blocks the run itself.
+    val notifPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { /* the FGS runs either way; denial only hides its notification */ }
+    val ensureNotifPermission: () -> Unit = {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    // Sensitive tools suspend in the engine until the OS permission dialog
+    // resolves; the engine may be running under the service, so the dialog is
+    // fired from here whenever a request is pending and we're on screen.
+    val runtimePermissions = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+        chatVm::resolvePermissions,
+    )
+    LaunchedEffect(permissionPending) {
+        permissionPending?.let { runtimePermissions.launch(it.permissions.toTypedArray()) }
+    }
+
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(4),
     ) { uris ->
@@ -132,7 +168,7 @@ fun ChatRoot(
     // The list is reversed (index 0 = bottom), so following the stream just
     // means snapping to 0 - and only when the user is already near the
     // bottom, so scrolling back to read isn't fought.
-    LaunchedEffect(messages.size, stream, askForm) {
+    LaunchedEffect(messages.size, stream, askForm, consentPending) {
         if (listState.isScrollInProgress) return@LaunchedEffect
         if (listState.firstVisibleItemIndex <= 1) listState.scrollToItem(0)
     }
@@ -196,12 +232,14 @@ fun ChatRoot(
                         messages = messages,
                         stream = stream,
                         askForm = askForm,
+                        consentRequest = consentPending,
                         listState = listState,
                         animations = streamingAnimationsOn,
                         isTemporary = isTemporary,
                         onRegenerate = { chatVm.regenerate(selectedModel, thinking) },
                         onSubmitAnswers = chatVm::submitAnswers,
                         onDeclineQuestions = chatVm::declineQuestions,
+                        onConsentDecision = chatVm::resolveConsent,
                         modifier = Modifier.fillMaxSize(),
                     )
                     // Near the model's context ceiling the composer is replaced
@@ -220,36 +258,68 @@ fun ChatRoot(
                                 onNewChat = { chatVm.newChat() },
                             )
                         } else {
-                            InputBar(
-                                value = input,
-                                onValueChange = { input = it },
-                                attachments = attachments,
-                                onAddImage = {
-                                    photoPicker.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                                    )
-                                },
-                                onRemoveImage = { i ->
-                                    attachments = attachments.filterIndexed { idx, _ -> idx != i }
-                                },
-                                canAttach = selectedModel?.vision == true,
-                                modelName = selectedModel?.let { modelDisplayName(it.id) },
-                                effortLabel = if (selectedModel?.reasoning == true) thinking.label else null,
-                                onOpenModelSheet = { showModelSheet = true },
-                                onSend = {
-                                    if (hapticsOn) {
-                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            val activeSkillId = activeConv?.skillId ?: pendingSkillId
+                            val activeSkill = allSkills.firstOrNull { it.id == activeSkillId }
+                            Column {
+                                // Typing "/xxx" filters the skills; tapping one
+                                // applies it to this conversation.
+                                val slashQuery = input
+                                    .takeIf { it.startsWith("/") && !it.contains(' ') && !it.contains('\n') }
+                                    ?.removePrefix("/")
+                                if (slashQuery != null) {
+                                    val matches = allSkills.filter { it.slug.startsWith(slashQuery.lowercase()) }
+                                    if (matches.isNotEmpty()) {
+                                        SlashSuggestions(matches) { skill ->
+                                            chatVm.setConversationSkill(skill.id)
+                                            input = ""
+                                        }
                                     }
-                                    chatVm.send(input, attachments.map { it.dataUrl }, selectedModel, thinking)
-                                    input = ""
-                                    attachments = emptyList()
-                                },
-                                onStop = chatVm::stopStreaming,
-                                isStreaming = stream is StreamState.Thinking ||
-                                    stream is StreamState.Streaming ||
-                                    stream is StreamState.RateLimited ||
-                                    stream is StreamState.Compacting,
-                            )
+                                }
+                                InputBar(
+                                    value = input,
+                                    onValueChange = { input = it },
+                                    attachments = attachments,
+                                    onAddImage = {
+                                        photoPicker.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                        )
+                                    },
+                                    onRemoveImage = { i ->
+                                        attachments = attachments.filterIndexed { idx, _ -> idx != i }
+                                    },
+                                    canAttach = selectedModel?.vision == true,
+                                    modelName = selectedModel?.let { modelDisplayName(it.id) },
+                                    effortLabel = if (selectedModel?.reasoning == true) thinking.label else null,
+                                    skillChip = activeSkill?.let { it.emoji to it.name },
+                                    onOpenSkillPicker = { showSkillPicker = true },
+                                    onClearSkill = { chatVm.setConversationSkill(null) },
+                                    onOpenModelSheet = { showModelSheet = true },
+                                    onSend = {
+                                        if (hapticsOn) {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        }
+                                        ensureNotifPermission()
+                                        // A leading /slug applies that skill and
+                                        // is stripped from the message.
+                                        var text = input
+                                        if (text.startsWith("/")) {
+                                            val token = text.removePrefix("/").substringBefore(' ').substringBefore('\n')
+                                            allSkills.firstOrNull { it.slug == token.lowercase() }?.let { s ->
+                                                chatVm.setConversationSkill(s.id)
+                                                text = text.removePrefix("/$token").trim()
+                                            }
+                                        }
+                                        chatVm.send(text, attachments.map { it.dataUrl }, selectedModel, thinking)
+                                        input = ""
+                                        attachments = emptyList()
+                                    },
+                                    onStop = chatVm::stopStreaming,
+                                    isStreaming = stream is StreamState.Thinking ||
+                                        stream is StreamState.Streaming ||
+                                        stream is StreamState.RateLimited ||
+                                        stream is StreamState.Compacting,
+                                )
+                            }
                         }
                     }
 
@@ -323,12 +393,19 @@ fun ChatRoot(
     if (showSettings) {
         val streamingAnimations by appVm.streamingAnimations.collectAsState()
         val haptics by appVm.hapticFeedback.collectAsState()
+        val grantedKeys by chatVm.alwaysAllowedConsents.collectAsState(initial = emptySet())
         SettingsSheet(
             account = account,
             email = email,
             plan = plan,
             streamingAnimations = streamingAnimations,
             hapticFeedback = haptics,
+            toolGrants = grantedKeys.sorted().map { it to consentLabel(it) },
+            onRevokeConsent = chatVm::revokeConsent,
+            mcpServerCount = chatVm.mcpServers.collectAsState().value.size,
+            onOpenMcpServers = { showMcpSheet = true },
+            skillCount = allSkills.size,
+            onOpenSkills = { showSkillsSheet = true },
             onSetStreamingAnimations = appVm::setStreamingAnimations,
             onSetHapticFeedback = appVm::setHapticFeedback,
             // Pricing and billing live on spettro.app; hand off to the browser.
@@ -352,6 +429,93 @@ fun ChatRoot(
         )
     }
 
+    if (showSkillPicker) {
+        SkillPickerSheet(
+            skills = allSkills,
+            selectedId = activeConv?.skillId ?: pendingSkillId,
+            onSelect = chatVm::setConversationSkill,
+            onDismiss = { showSkillPicker = false },
+        )
+    }
+
+    if (showSkillsSheet) {
+        val saveError by chatVm.skillSaveError.collectAsState()
+        to.eyed.spettro.chat.ui.settings.SkillsSheet(
+            skills = allSkills,
+            saveError = saveError,
+            onSave = chatVm::saveSkill,
+            onClearSaveError = chatVm::clearSkillSaveError,
+            onDelete = chatVm::deleteSkill,
+            newId = chatVm::newSkillId,
+            onDismiss = { showSkillsSheet = false },
+        )
+    }
+
+    if (showMcpSheet) {
+        val servers by chatVm.mcpServers.collectAsState()
+        val toolsByServer by chatVm.mcpToolsByServer.collectAsState()
+        val errors by chatVm.mcpErrors.collectAsState()
+        to.eyed.spettro.chat.ui.settings.McpServersSheet(
+            servers = servers,
+            toolCounts = toolsByServer.mapValues { it.value.size },
+            errors = errors,
+            onSave = chatVm::saveMcpServer,
+            onRemove = chatVm::removeMcpServer,
+            onSetEnabled = chatVm::setMcpEnabled,
+            onRefresh = chatVm::refreshMcpTools,
+            newId = chatVm::newMcpId,
+            onDismiss = { showMcpSheet = false },
+        )
+    }
+}
+
+/** The /slug autocomplete panel shown above the composer. */
+@Composable
+private fun SlashSuggestions(
+    matches: List<to.eyed.spettro.chat.data.skills.Skill>,
+    onPick: (to.eyed.spettro.chat.data.skills.Skill) -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .surfaceCard(RoundedCornerShape(Radii.card), fill = Ink.Surface)
+            .padding(vertical = 4.dp),
+    ) {
+        matches.take(4).forEach { skill ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onPick(skill) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(skill.emoji, fontSize = 14.sp)
+                Spacer(Modifier.width(10.dp))
+                Text("/${skill.slug}", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Ink.White)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    skill.description.ifBlank { skill.name },
+                    fontSize = 11.sp,
+                    color = Ink.I500,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+            }
+        }
+    }
+}
+
+/** Display label for a persisted consent grant in Settings. */
+private fun consentLabel(key: String): String = when (key) {
+    "tool:calendar-events" -> "Calendar"
+    "tool:contacts-search" -> "Contacts"
+    "tool:set-reminder" -> "Reminders"
+    "tool:get-location" -> "Location"
+    else -> if (key.startsWith("mcp:")) "MCP server (${key.removePrefix("mcp:")})" else key
 }
 
 /**

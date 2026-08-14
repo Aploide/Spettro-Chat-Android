@@ -47,6 +47,8 @@ data class Conversation(
     val updatedAt: Long,
     val pinned: Boolean = false,
     val archived: Boolean = false,
+    /** Active skill id; defaulted so pre-skill exports keep importing. */
+    val skillId: String? = null,
     val messages: List<StoredMessage> = emptyList(),
 ) {
     val displayTitle: String get() = title.ifBlank { preview.ifBlank { "New Chat" } }
@@ -67,8 +69,7 @@ data class ChatExport(
 
 data class ImportResult(val imported: Int, val skipped: Int)
 
-class ConversationStore(private val context: Context) {
-    private val dao = ChatDatabase.build(context).conversations()
+class ConversationStore(private val context: Context, private val dao: ConversationDao) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val toolsSerializer = ListSerializer(StoredToolRun.serializer())
 
@@ -162,6 +163,7 @@ class ConversationStore(private val context: Context) {
                 updatedAt = conversation.updatedAt,
                 pinned = conversation.pinned,
                 archived = conversation.archived,
+                skillId = conversation.skillId,
             ),
             conversation.messages.mapIndexed { ord, m ->
                 MessageEntity(
@@ -186,6 +188,7 @@ class ConversationStore(private val context: Context) {
         updatedAt = conversation.updatedAt,
         pinned = conversation.pinned,
         archived = conversation.archived,
+        skillId = conversation.skillId,
         messages = messages.sortedBy { it.message.ord }.map { m ->
             StoredMessage(
                 role = m.message.role,

@@ -25,6 +25,22 @@ data class ConversationEntity(
     val updatedAt: Long,
     val pinned: Boolean,
     val archived: Boolean,
+    /** Active skill for this chat (bundled or user skill id); null = none. */
+    val skillId: String? = null,
+)
+
+@Entity(tableName = "skills")
+data class SkillEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    /** The /slash trigger; unique among user skills, [a-z0-9-]. */
+    val slug: String,
+    val description: String,
+    /** Markdown appended to the system prompt while the skill is active. */
+    val instructions: String,
+    val emoji: String,
+    val createdAt: Long,
+    val updatedAt: Long,
 )
 
 @Entity(
@@ -135,17 +151,54 @@ interface ConversationDao {
     }
 }
 
+@Dao
+interface SkillDao {
+    @Query("SELECT * FROM skills ORDER BY name COLLATE NOCASE")
+    fun all(): kotlinx.coroutines.flow.Flow<List<SkillEntity>>
+
+    @Query("SELECT * FROM skills ORDER BY name COLLATE NOCASE")
+    suspend fun allOnce(): List<SkillEntity>
+
+    @Query("SELECT * FROM skills WHERE id = :id")
+    suspend fun byId(id: String): SkillEntity?
+
+    @Query("SELECT * FROM skills WHERE slug = :slug")
+    suspend fun bySlug(slug: String): SkillEntity?
+
+    @Upsert
+    suspend fun upsert(skill: SkillEntity)
+
+    @Query("DELETE FROM skills WHERE id = :id")
+    suspend fun delete(id: String)
+}
+
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, MessageImageEntity::class],
-    version = 1,
+    entities = [ConversationEntity::class, MessageEntity::class, MessageImageEntity::class, SkillEntity::class],
+    version = 2,
     exportSchema = false,
 )
 abstract class ChatDatabase : RoomDatabase() {
     abstract fun conversations(): ConversationDao
+    abstract fun skills(): SkillDao
 
     companion object {
+        // Chats exist only on-device, so migrations must be explicit — a
+        // destructive fallback would silently erase the user's history.
+        private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE conversations ADD COLUMN skillId TEXT")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS skills (" +
+                        "id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL, " +
+                        "description TEXT NOT NULL, instructions TEXT NOT NULL, emoji TEXT NOT NULL, " +
+                        "createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)",
+                )
+            }
+        }
+
         fun build(context: Context): ChatDatabase =
             Room.databaseBuilder(context.applicationContext, ChatDatabase::class.java, "conversations.db")
+                .addMigrations(MIGRATION_1_2)
                 .build()
     }
 }

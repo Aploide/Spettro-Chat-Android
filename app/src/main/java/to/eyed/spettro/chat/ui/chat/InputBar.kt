@@ -69,6 +69,10 @@ fun InputBar(
     canAttach: Boolean,
     modelName: String?,
     effortLabel: String?,
+    /** Active skill chip: emoji + name, or null when no skill is applied. */
+    skillChip: Pair<String, String>?,
+    onOpenSkillPicker: () -> Unit,
+    onClearSkill: () -> Unit,
     onOpenModelSheet: () -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
@@ -185,6 +189,46 @@ fun InputBar(
                             if (effortLabel != null) {
                                 Spacer(Modifier.width(6.dp))
                                 Text(effortLabel, fontSize = 13.sp, color = Ink.I500, maxLines = 1)
+                            }
+                        }
+                    }
+                    // Skill chip: shows the active skill; X clears it, tap picks another.
+                    Spacer(Modifier.width(6.dp))
+                    Row(
+                        Modifier
+                            .clip(CircleShape)
+                            .background(Ink.SurfaceHigh)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onOpenSkillPicker,
+                            )
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (skillChip == null) {
+                            Text("Skills", fontSize = 13.sp, color = Ink.I500, maxLines = 1)
+                        } else {
+                            Text(
+                                "${skillChip.first} ${skillChip.second}",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Ink.I100,
+                                maxLines = 1,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Box(
+                                Modifier
+                                    .size(16.dp)
+                                    .clip(CircleShape)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                        onClick = onClearSkill,
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Lucide.X, "Clear skill", Modifier.size(12.dp), tint = Ink.I500)
                             }
                         }
                     }

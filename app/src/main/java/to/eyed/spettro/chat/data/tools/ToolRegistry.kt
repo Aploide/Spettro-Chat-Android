@@ -1,8 +1,10 @@
 package to.eyed.spettro.chat.data.tools
 
+import android.Manifest
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import to.eyed.spettro.chat.data.AppPrefs
 import to.eyed.spettro.chat.data.api.ToolCallData
 import to.eyed.spettro.chat.data.api.ToolSpec
 import java.net.URL
@@ -10,14 +12,39 @@ import java.net.URL
 data class ToolResult(val output: String, val isError: Boolean = false)
 
 /**
+ * Marks a tool as touching personal data: the engine runs its calls through
+ * the in-app consent card first (mandatory, in addition to the Android
+ * runtime permission), then through the permission bridge.
+ */
+data class SensitiveMeta(
+    val consentKey: String,
+    val consentTitle: String,
+    val consentDetail: String,
+    val permissions: List<String>,
+    val rationale: String,
+)
+
+/**
  * The tools offered to the model on every chat request, mirroring the CLI's
  * native tool calling (internal/agent/llm_runtime_prompt.go) trimmed to what
  * makes sense on a phone. This file owns the specs, labels, and dispatch;
- * implementations live in [WebTools], [DeviceTools], and AskUser.kt.
+ * implementations live in [WebTools], [DeviceTools], [CalendarTools],
+ * [ContactsTools], [ReminderTools], [LocationTools], and AskUser.kt.
  */
-class ToolRegistry(context: Context) {
+class ToolRegistry(context: Context, prefs: AppPrefs) {
     private val web = WebTools()
     private val device = DeviceTools(context)
+    private val calendar = CalendarTools(context)
+    private val contacts = ContactsTools(context)
+    private val reminders = ReminderTools(context, prefs)
+    private val location = LocationTools(context)
+
+    /**
+     * Whether any activity is on screen right now; wired to the engine by
+     * AppContainer. Tools that launch activities or read location must fail
+     * softly while the app is backgrounded.
+     */
+    var appVisibleProvider: () -> Boolean = { true }
 
     companion object {
         const val WEB_SEARCH = "web-search"
@@ -26,6 +53,10 @@ class ToolRegistry(context: Context) {
         const val DEVICE_INFO = "device-info"
         const val ASK_USER = "ask-user"
         const val COMMENT = "comment"
+        const val CALENDAR_EVENTS = "calendar-events"
+        const val CONTACTS_SEARCH = "contacts-search"
+        const val SET_REMINDER = "set-reminder"
+        const val GET_LOCATION = "get-location"
     }
 
     val specs: List<ToolSpec> = listOf(
@@ -49,6 +80,32 @@ class ToolRegistry(context: Context) {
         ToolSpec(
             name = DEVICE_INFO,
             description = "Read this Android device's status: battery level and charging state, network connectivity, locale, timezone, and device model.",
+            parametersJson = """{"type":"object","properties":{},"required":[]}""",
+        ),
+        ToolSpec(
+            name = CALENDAR_EVENTS,
+            description = "Read the user's upcoming calendar events, or open their calendar app " +
+                "pre-filled to create a new event (the user confirms the save there). " +
+                "The app asks the user for approval before any calendar access; a denial is final for this turn. " +
+                "Creating an event requires the app to be on screen.",
+            parametersJson = """{"type":"object","properties":{"action":{"type":"string","enum":["read","create"],"description":"read upcoming events, or create one via the calendar editor"},"days":{"type":"integer","description":"read: how many days ahead to look (default 7, max 60)"},"title":{"type":"string","description":"create: event title"},"start":{"type":"string","description":"create: start as ISO local datetime, e.g. 2026-08-14T15:30"},"end":{"type":"string","description":"create: end as ISO local datetime (default start + 1h)"},"location":{"type":"string","description":"create: optional location"},"description":{"type":"string","description":"create: optional notes"}},"required":["action"]}""",
+        ),
+        ToolSpec(
+            name = CONTACTS_SEARCH,
+            description = "Search the user's contacts by name; returns matching names with phone numbers and " +
+                "email addresses. The app asks the user for approval before any contacts access.",
+            parametersJson = """{"type":"object","properties":{"name":{"type":"string","description":"Full or partial name to search for."},"max_results":{"type":"integer","description":"Maximum matches to return (default 5, max 10)."}},"required":["name"]}""",
+        ),
+        ToolSpec(
+            name = SET_REMINDER,
+            description = "Schedule a reminder delivered as a notification on this phone. Delivery time is " +
+                "approximate (the OS may batch it by a few minutes). The app asks the user for approval first.",
+            parametersJson = """{"type":"object","properties":{"message":{"type":"string","description":"The reminder text shown in the notification."},"at":{"type":"string","description":"When to remind, as ISO local datetime, e.g. 2026-08-14T15:30."},"in_minutes":{"type":"integer","description":"Alternative to at: minutes from now."}},"required":["message"]}""",
+        ),
+        ToolSpec(
+            name = GET_LOCATION,
+            description = "Get the device's approximate (city-level) location. Only works while the app is on " +
+                "screen. The app asks the user for approval before any location access.",
             parametersJson = """{"type":"object","properties":{},"required":[]}""",
         ),
         ToolSpec(
@@ -86,6 +143,13 @@ class ToolRegistry(context: Context) {
         WEB_FETCH -> hostArg(argumentsJson)?.let { "Reading $it…" } ?: "Reading a web page…"
         CURRENT_TIME -> "Checking the time…"
         DEVICE_INFO -> "Reading device status…"
+        CALENDAR_EVENTS ->
+            if (ToolArgs.string(argumentsJson, "action") == "create") "Preparing a calendar event…"
+            else "Reading your calendar…"
+        CONTACTS_SEARCH -> quotedArg(argumentsJson, "name")
+            ?.let { "Searching contacts for $it…" } ?: "Searching your contacts…"
+        SET_REMINDER -> "Setting a reminder…"
+        GET_LOCATION -> "Reading your location…"
         ASK_USER -> "Waiting for your answer…"
         COMMENT -> commentMessage(argumentsJson) ?: "…"
         else -> "Running $name…"
@@ -98,6 +162,13 @@ class ToolRegistry(context: Context) {
         WEB_FETCH -> hostArg(argumentsJson)?.let { "Read $it" } ?: "Read a web page"
         CURRENT_TIME -> "Checked the time"
         DEVICE_INFO -> "Read device status"
+        CALENDAR_EVENTS ->
+            if (ToolArgs.string(argumentsJson, "action") == "create") "Opened the calendar editor"
+            else "Read your calendar"
+        CONTACTS_SEARCH -> quotedArg(argumentsJson, "name")
+            ?.let { "Searched contacts for $it" } ?: "Searched your contacts"
+        SET_REMINDER -> "Set a reminder"
+        GET_LOCATION -> "Read your location"
         ASK_USER -> "Asked for your input"
         // A comment's whole point is its text; the label is the message.
         COMMENT -> commentMessage(argumentsJson) ?: "…"
@@ -111,6 +182,10 @@ class ToolRegistry(context: Context) {
                 WEB_FETCH -> web.fetch(call.arguments)
                 CURRENT_TIME -> device.currentTime(call.arguments)
                 DEVICE_INFO -> device.deviceInfo()
+                CALENDAR_EVENTS -> calendar.run(call.arguments, appVisibleProvider())
+                CONTACTS_SEARCH -> contacts.search(call.arguments)
+                SET_REMINDER -> reminders.set(call.arguments)
+                GET_LOCATION -> location.current(appVisibleProvider())
                 // The CLI echoes the message back verbatim as the result.
                 COMMENT -> ToolResult(ToolArgs.string(call.arguments, "message") ?: "")
                 // ask-user blocks on the person; the ViewModel intercepts it
@@ -121,6 +196,53 @@ class ToolRegistry(context: Context) {
         } catch (e: Exception) {
             ToolResult("Tool ${call.name} failed: ${e.message ?: e.javaClass.simpleName}", isError = true)
         }
+    }
+
+    /**
+     * Consent + permission requirements for tools touching personal data;
+     * null for everything else. Takes the arguments because calendar-events
+     * only needs READ_CALENDAR for reads (creation goes through the user's
+     * calendar app, which is its own confirmation).
+     */
+    fun sensitiveMeta(name: String, argumentsJson: String): SensitiveMeta? = when (name) {
+        CALENDAR_EVENTS -> {
+            val creating = ToolArgs.string(argumentsJson, "action") == "create"
+            SensitiveMeta(
+                consentKey = "tool:$CALENDAR_EVENTS",
+                consentTitle = if (creating) "Allow adding to your calendar?" else "Allow reading your calendar?",
+                consentDetail = if (creating) {
+                    "The assistant wants to open your calendar app pre-filled with a new event. " +
+                        "You review and save it there."
+                } else {
+                    "The assistant wants to read your upcoming calendar events to answer this request."
+                },
+                permissions = if (creating) emptyList() else listOf(Manifest.permission.READ_CALENDAR),
+                rationale = "Reading your calendar needs the Android calendar permission.",
+            )
+        }
+        CONTACTS_SEARCH -> SensitiveMeta(
+            consentKey = "tool:$CONTACTS_SEARCH",
+            consentTitle = "Allow searching your contacts?",
+            consentDetail = "The assistant wants to look up a name in your contacts and see the matching " +
+                "phone numbers and email addresses.",
+            permissions = listOf(Manifest.permission.READ_CONTACTS),
+            rationale = "Searching your contacts needs the Android contacts permission.",
+        )
+        SET_REMINDER -> SensitiveMeta(
+            consentKey = "tool:$SET_REMINDER",
+            consentTitle = "Allow setting reminders?",
+            consentDetail = "The assistant wants to schedule a reminder notification on this phone.",
+            permissions = emptyList(),
+            rationale = "",
+        )
+        GET_LOCATION -> SensitiveMeta(
+            consentKey = "tool:$GET_LOCATION",
+            consentTitle = "Allow access to your location?",
+            consentDetail = "The assistant wants your approximate (city-level) location to answer this request.",
+            permissions = listOf(Manifest.permission.ACCESS_COARSE_LOCATION),
+            rationale = "Reading your location needs the Android location permission.",
+        )
+        else -> null
     }
 
     private fun commentMessage(argumentsJson: String): String? =

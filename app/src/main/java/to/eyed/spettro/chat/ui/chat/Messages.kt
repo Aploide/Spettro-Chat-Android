@@ -61,12 +61,14 @@ fun MessagesList(
     messages: List<StoredMessage>,
     stream: StreamState,
     askForm: AskForm?,
+    consentRequest: to.eyed.spettro.chat.engine.ConsentRequest?,
     listState: LazyListState,
     animations: Boolean,
     isTemporary: Boolean,
     onRegenerate: () -> Unit,
     onSubmitAnswers: (List<AskAnswer>) -> Unit,
     onDeclineQuestions: () -> Unit,
+    onConsentDecision: (to.eyed.spettro.chat.engine.ConsentDecision) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (messages.isEmpty() && stream is StreamState.Idle) {
@@ -99,6 +101,11 @@ fun MessagesList(
             if (askForm != null) {
                 item(key = "askform") {
                     QuestionCard(askForm, onSubmitAnswers, onDeclineQuestions)
+                }
+            }
+            if (consentRequest != null) {
+                item(key = "consent") {
+                    ConsentCard(consentRequest, onConsentDecision)
                 }
             }
             when (stream) {

@@ -47,6 +47,13 @@ fun SettingsSheet(
     hapticFeedback: Boolean,
     onSetStreamingAnimations: (Boolean) -> Unit,
     onSetHapticFeedback: (Boolean) -> Unit,
+    /** Persisted "always allow" grants for sensitive tools: consentKey → display label. */
+    toolGrants: List<Pair<String, String>>,
+    onRevokeConsent: (String) -> Unit,
+    mcpServerCount: Int,
+    onOpenMcpServers: () -> Unit,
+    skillCount: Int,
+    onOpenSkills: () -> Unit,
     onManageSubscription: () -> Unit,
     onExportChats: () -> Unit,
     onImportChats: () -> Unit,
@@ -124,6 +131,39 @@ fun SettingsSheet(
                 RowDivider()
                 SettingRow("Haptic feedback", "Subtle taps on send and receive.") {
                     GlassToggle(hapticFeedback, onSetHapticFeedback)
+                }
+
+                SectionDivider()
+                SectionHeader("Connectors")
+                SettingRow(
+                    "MCP servers",
+                    if (mcpServerCount == 0) "Connect remote tool servers the assistant can call."
+                    else "$mcpServerCount ${if (mcpServerCount == 1) "server" else "servers"} configured.",
+                ) {
+                    GlassButton("Manage", onClick = onOpenMcpServers)
+                }
+                RowDivider()
+                SettingRow(
+                    "Skills",
+                    "$skillCount available — reusable instructions applied per chat or via /slash.",
+                ) {
+                    GlassButton("Manage", onClick = onOpenSkills)
+                }
+
+                SectionDivider()
+                SectionHeader("Tool permissions")
+                if (toolGrants.isEmpty()) {
+                    SettingRow(
+                        "No standing approvals",
+                        "When you pick \"Always allow\" on a permission card, the grant appears here.",
+                    ) {}
+                } else {
+                    toolGrants.forEachIndexed { i, (key, label) ->
+                        if (i > 0) RowDivider()
+                        SettingRow(label, "Allowed without asking again.") {
+                            GlassButton("Revoke", onClick = { onRevokeConsent(key) }, textColor = Ink.Danger)
+                        }
+                    }
                 }
 
                 SectionDivider()

@@ -4,8 +4,11 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import to.eyed.spettro.chat.data.api.Account
@@ -31,6 +34,10 @@ class AppPrefs(private val context: Context) {
         val thinkingLevel = stringPreferencesKey("thinking_level")
         val streamingAnimations = booleanPreferencesKey("streaming_animations")
         val hapticFeedback = booleanPreferencesKey("haptic_feedback")
+        val consentAlways = stringSetPreferencesKey("tool_consent_always")
+        val remindersJson = stringPreferencesKey("reminders_json")
+        val mcpServersJson = stringPreferencesKey("mcp_servers")
+        val mcpToolsCacheJson = stringPreferencesKey("mcp_tools_cache")
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -140,5 +147,43 @@ class AppPrefs(private val context: Context) {
 
     suspend fun saveHapticFeedback(on: Boolean) {
         context.dataStore.edit { it[Keys.hapticFeedback] = on }
+    }
+
+    // --- Consent gate ("always allow" decisions for sensitive tools) ---
+
+    fun consentAlwaysFlow(): Flow<Set<String>> =
+        context.dataStore.data.map { it[Keys.consentAlways] ?: emptySet() }
+
+    suspend fun consentAlways(): Set<String> =
+        context.dataStore.data.first()[Keys.consentAlways] ?: emptySet()
+
+    suspend fun grantConsentAlways(key: String) {
+        context.dataStore.edit { it[Keys.consentAlways] = (it[Keys.consentAlways] ?: emptySet()) + key }
+    }
+
+    suspend fun revokeConsentAlways(key: String) {
+        context.dataStore.edit { it[Keys.consentAlways] = (it[Keys.consentAlways] ?: emptySet()) - key }
+    }
+
+    // --- Scheduled reminders (JSON list, reloaded by BootReceiver) ---
+
+    suspend fun remindersJson(): String? = context.dataStore.data.first()[Keys.remindersJson]
+
+    suspend fun saveRemindersJson(json: String) {
+        context.dataStore.edit { it[Keys.remindersJson] = json }
+    }
+
+    // --- MCP server configs and cached tool lists ---
+
+    suspend fun mcpServersJson(): String? = context.dataStore.data.first()[Keys.mcpServersJson]
+
+    suspend fun saveMcpServersJson(json: String) {
+        context.dataStore.edit { it[Keys.mcpServersJson] = json }
+    }
+
+    suspend fun mcpToolsCacheJson(): String? = context.dataStore.data.first()[Keys.mcpToolsCacheJson]
+
+    suspend fun saveMcpToolsCacheJson(json: String) {
+        context.dataStore.edit { it[Keys.mcpToolsCacheJson] = json }
     }
 }

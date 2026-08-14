@@ -4,8 +4,14 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableSharedFlow
 import to.eyed.spettro.chat.data.api.SpettroApi
 import to.eyed.spettro.chat.data.api.SpettroWebApi
+import to.eyed.spettro.chat.data.mcp.McpRegistry
+import to.eyed.spettro.chat.data.skills.SkillsRepository
+import to.eyed.spettro.chat.data.store.ChatDatabase
 import to.eyed.spettro.chat.data.store.ConversationStore
 import to.eyed.spettro.chat.data.tools.ToolRegistry
+import to.eyed.spettro.chat.engine.ChatEngine
+import to.eyed.spettro.chat.engine.ConsentGate
+import to.eyed.spettro.chat.engine.PermissionBridge
 
 /** Manual DI: one instance of each service, shared by the ViewModels. */
 class AppContainer(context: Context) {
@@ -17,11 +23,29 @@ class AppContainer(context: Context) {
     val webApi = SpettroWebApi(
         baseUrl = debugOverride(context, "spettro_web_url") ?: SpettroWebApi.DEFAULT_BASE_URL,
     )
-    val conversations = ConversationStore(context.applicationContext)
-    val tools = ToolRegistry(context.applicationContext)
+    private val db = ChatDatabase.build(context.applicationContext)
+    val conversations = ConversationStore(context.applicationContext, db.conversations())
+    val skills = SkillsRepository(db.skills())
+    val tools = ToolRegistry(context.applicationContext, prefs)
+
+    /** In-app approval for sensitive tools, and the runtime-permission relay. */
+    val consent = ConsentGate(prefs)
+    val permissions = PermissionBridge(context.applicationContext)
+
+    /** User-configured remote MCP servers and their discovered tools. */
+    val mcp = McpRegistry(prefs)
 
     /** Emitted when any API call returns 401 — the session must be re-established. */
     val unauthorized = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** The app-scoped agent loop; built last so it can take everything above. */
+    val engine = ChatEngine(
+        context.applicationContext, api, conversations, tools, mcp, skills, consent, permissions, unauthorized,
+    )
+
+    init {
+        tools.appVisibleProvider = { engine.appVisible }
+    }
 
     companion object {
         /**
