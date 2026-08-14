@@ -36,6 +36,9 @@ class AppContainer(context: Context) {
     /** User-configured remote MCP servers and their discovered tools. */
     val mcp = McpRegistry(prefs)
 
+    /** Content shared into the app from other apps, awaiting the composer. */
+    val shareInbox = ShareInbox()
+
     /** Emitted when any API call returns 401 — the session must be re-established. */
     val unauthorized = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
@@ -45,7 +48,7 @@ class AppContainer(context: Context) {
     /** The app-scoped agent loop; built last so it can take everything above. */
     val engine = ChatEngine(
         context.applicationContext, api, conversations, tools, mcp, skills, memory,
-        consent, permissions, unauthorized,
+        consent, permissions, prefs, unauthorized,
     )
 
     /** Whole-app export/import: chats, skills, memory, MCP servers, settings. */

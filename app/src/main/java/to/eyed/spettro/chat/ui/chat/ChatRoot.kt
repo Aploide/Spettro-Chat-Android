@@ -46,9 +46,12 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import kotlinx.coroutines.launch
+import to.eyed.spettro.chat.data.DocumentUtil
 import to.eyed.spettro.chat.data.ImageUtil
 import to.eyed.spettro.chat.data.api.SpettroApi
+import to.eyed.spettro.chat.data.store.StoredFile
 import to.eyed.spettro.chat.ui.components.surfaceCard
 import to.eyed.spettro.chat.ui.settings.SettingsSheet
 import to.eyed.spettro.chat.ui.theme.Ink
@@ -98,6 +101,7 @@ fun ChatRoot(
     val context = LocalContext.current
     var input by rememberSaveable { mutableStateOf("") }
     var attachments by remember { mutableStateOf(listOf<PendingImage>()) }
+    var fileAttachments by remember { mutableStateOf(listOf<StoredFile>()) }
     var showSettings by remember { mutableStateOf(false) }
     var showModelSheet by remember { mutableStateOf(false) }
     var showMcpSheet by remember { mutableStateOf(false) }
@@ -164,6 +168,62 @@ fun ChatRoot(
             }
             attachments = (attachments + processed).take(4)
         }
+    }
+
+    // Camera capture goes through a FileProvider cache URI; the string
+    // survives the activity being recycled behind the camera app.
+    var cameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { saved ->
+        val uri = cameraUriString?.toUri()
+        cameraUriString = null
+        if (saved && uri != null) {
+            scope.launch {
+                ImageUtil.toDataUrl(context, uri)?.let {
+                    attachments = (attachments + PendingImage(it, ImageUtil.decodeDataUrl(it))).take(4)
+                }
+            }
+        }
+    }
+
+    // Documents (PDF/text) are reduced to extracted text on attach; anything
+    // unusable surfaces its reason as a toast.
+    val attachFile: suspend (android.net.Uri) -> Unit = { uri ->
+        try {
+            val file = DocumentUtil.extract(context, uri)
+            fileAttachments = (fileAttachments + file).take(3)
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(
+                context,
+                e.message ?: "Couldn't attach that file.",
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch { uris.take(3).forEach { attachFile(it) } }
+    }
+
+    // Content shared in from other apps: prefill a fresh chat with it.
+    val sharedPayload by chatVm.sharedPayload.collectAsState()
+    LaunchedEffect(sharedPayload) {
+        val payload = sharedPayload ?: return@LaunchedEffect
+        chatVm.consumeSharedPayload()
+        chatVm.newChat()
+        attachments = emptyList()
+        fileAttachments = emptyList()
+        if (payload.text.isNotEmpty()) input = payload.text
+        if (payload.imageUris.isNotEmpty()) {
+            val processed = payload.imageUris.mapNotNull { uri ->
+                ImageUtil.toDataUrl(context, uri)?.let { PendingImage(it, ImageUtil.decodeDataUrl(it)) }
+            }
+            attachments = processed.take(4)
+        }
+        payload.fileUris.take(3).forEach { attachFile(it) }
     }
 
     // The list is reversed (index 0 = bottom), so following the stream just
@@ -280,15 +340,32 @@ fun ChatRoot(
                                     value = input,
                                     onValueChange = { input = it },
                                     attachments = attachments,
-                                    onAddImage = {
+                                    files = fileAttachments,
+                                    onCapturePhoto = {
+                                        val uri = ImageUtil.newCameraUri(context)
+                                        cameraUriString = uri.toString()
+                                        cameraLauncher.launch(uri)
+                                    },
+                                    onPickPhotos = {
                                         photoPicker.launch(
                                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                        )
+                                    },
+                                    onPickFiles = {
+                                        filePicker.launch(
+                                            arrayOf(
+                                                "application/pdf", "text/*", "application/json",
+                                                "application/xml", "application/octet-stream",
+                                            ),
                                         )
                                     },
                                     onRemoveImage = { i ->
                                         attachments = attachments.filterIndexed { idx, _ -> idx != i }
                                     },
-                                    canAttach = selectedModel?.vision == true,
+                                    onRemoveFile = { i ->
+                                        fileAttachments = fileAttachments.filterIndexed { idx, _ -> idx != i }
+                                    },
+                                    canAttachImages = selectedModel?.vision == true,
                                     modelName = selectedModel?.let { modelDisplayName(it.id) },
                                     effortLabel = if (selectedModel?.reasoning == true) thinking.label else null,
                                     skillChip = activeSkill?.let { it.emoji to it.name },
@@ -310,9 +387,16 @@ fun ChatRoot(
                                                 text = text.removePrefix("/$token").trim()
                                             }
                                         }
-                                        chatVm.send(text, attachments.map { it.dataUrl }, selectedModel, thinking)
+                                        chatVm.send(
+                                            text,
+                                            attachments.map { it.dataUrl },
+                                            fileAttachments,
+                                            selectedModel,
+                                            thinking,
+                                        )
                                         input = ""
                                         attachments = emptyList()
+                                        fileAttachments = emptyList()
                                     },
                                     onStop = chatVm::stopStreaming,
                                     isStreaming = stream is StreamState.Thinking ||
@@ -394,6 +478,7 @@ fun ChatRoot(
     if (showSettings) {
         val streamingAnimations by appVm.streamingAnimations.collectAsState()
         val haptics by appVm.hapticFeedback.collectAsState()
+        val autoCompact by appVm.autoCompact.collectAsState()
         val grantedKeys by chatVm.alwaysAllowedConsents.collectAsState(initial = emptySet())
         SettingsSheet(
             account = account,
@@ -401,6 +486,7 @@ fun ChatRoot(
             plan = plan,
             streamingAnimations = streamingAnimations,
             hapticFeedback = haptics,
+            autoCompact = autoCompact,
             toolGrants = grantedKeys.sorted().map { it to consentLabel(it) },
             onRevokeConsent = chatVm::revokeConsent,
             mcpServerCount = chatVm.mcpServers.collectAsState().value.size,
@@ -411,6 +497,7 @@ fun ChatRoot(
             onOpenMemory = { showMemorySheet = true },
             onSetStreamingAnimations = appVm::setStreamingAnimations,
             onSetHapticFeedback = appVm::setHapticFeedback,
+            onSetAutoCompact = appVm::setAutoCompact,
             // Pricing and billing live on spettro.app; hand off to the browser.
             onManageSubscription = { onOpenUrl(SpettroApi.PRICING_URL) },
             onExportChats = {

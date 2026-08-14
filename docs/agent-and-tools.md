@@ -134,7 +134,16 @@ and a "needs your input" notification tells you to.
 
 - **Compaction** asks the model for a self-contained summary and replaces the history with
   it. Images are dropped from the compaction request: they are the bulk of the context, and
-  non-vision models must be able to compact too.
+  non-vision models must be able to compact too. Attached-document text stays in the
+  request, so its facts survive into the summary.
+- **Auto-compaction** runs the same summarization automatically at the end of any turn that
+  leaves the history above 75% of the model's window (best-effort — a failure changes
+  nothing, and the 85% hard stop still protects the next send). It can be turned off under
+  Settings → Customization.
+- **Attachments** ride on the user message: images as data URLs (vision models only), and
+  documents (PDF via PdfBox text extraction, anything text-like as-is) as extracted text
+  capped at 60,000 characters per file, sent inline as `<attached-file>` blocks ahead of
+  the user's words.
 - **Regeneration** drops the trailing assistant reply and re-runs the last user turn.
 - **Title generation** runs as a separate background completion alongside the first turn, so
   the sidebar and the completion notification can name the chat. Best-effort; a failure

@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,10 +38,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.Copy
+import com.composables.icons.lucide.FileText
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.RefreshCw
 import to.eyed.spettro.chat.data.ImageUtil
@@ -165,6 +168,31 @@ fun MessagesList(
 @Composable
 private fun UserBubble(msg: StoredMessage, maxBubbleWidth: Dp) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+        if (msg.files.isNotEmpty()) {
+            Column(horizontalAlignment = Alignment.End) {
+                msg.files.forEach { file ->
+                    Row(
+                        Modifier
+                            .padding(bottom = 8.dp)
+                            .surfaceHigh(RoundedCornerShape(Radii.row))
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Lucide.FileText, contentDescription = null, Modifier.size(15.dp), tint = Ink.I500)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            file.name,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Ink.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = maxBubbleWidth - 60.dp),
+                        )
+                    }
+                }
+            }
+        }
         if (msg.images.isNotEmpty()) {
             val bitmaps = remember(msg.images) {
                 msg.images.mapNotNull { ImageUtil.decodeDataUrl(it) }

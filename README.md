@@ -14,12 +14,17 @@ SDKs of any kind.
 
 **Chat**
 - Streaming answers with live token rendering and an optional collapsible reasoning panel.
-- Image attachments (auto-downscaled and re-encoded) for vision-capable models.
+- Image attachments (auto-downscaled and re-encoded) for vision-capable models, straight
+  from the camera or the photo library.
+- Document attachments — PDFs and text files, reduced to extracted text on-device — on any
+  model.
+- Share text, links, images, and files into the app from anywhere, or select text in any
+  app and tap **Ask Spettro**.
 - Per-chat model and reasoning-effort selection, remembered between launches.
 - Pin, archive, search, rename-by-generation — every chat gets an auto-generated title.
 - **Temporary chats** that live only in memory and are never written to disk.
-- **Compaction**: summarize a long conversation in place when it nears the model's context
-  window, instead of failing mid-turn.
+- **Compaction**: long conversations are summarized in place — automatically at 75% of the
+  model's context window (toggleable), or on demand — instead of failing mid-turn.
 - Markdown rendering with copyable code blocks; per-message copy and regenerate.
 
 **Agent**

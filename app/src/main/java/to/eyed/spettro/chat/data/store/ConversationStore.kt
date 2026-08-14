@@ -25,6 +25,16 @@ data class StoredToolRun(
     val output: String = "",
 )
 
+/**
+ * A document attached to a user message, stored as its extracted text
+ * (the original file never leaves the sending app's provider).
+ */
+@Serializable
+data class StoredFile(
+    val name: String,
+    val text: String,
+)
+
 @Serializable
 data class StoredMessage(
     val role: String, // "user" | "assistant"
@@ -33,6 +43,8 @@ data class StoredMessage(
     val at: Long,
     /** Attached images as data URLs (data:image/jpeg;base64,...). */
     val images: List<String> = emptyList(),
+    /** Attached documents (PDF/text), as extracted text. */
+    val files: List<StoredFile> = emptyList(),
     /** Tools the assistant ran during this turn, in order. */
     val tools: List<StoredToolRun> = emptyList(),
 )
@@ -58,6 +70,7 @@ data class ImportResult(val imported: Int, val skipped: Int)
 class ConversationStore(private val context: Context, private val dao: ConversationDao) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val toolsSerializer = ListSerializer(StoredToolRun.serializer())
+    private val filesSerializer = ListSerializer(StoredFile.serializer())
 
     private val migration = Mutex()
     private var migrated = false
@@ -148,6 +161,7 @@ class ConversationStore(private val context: Context, private val dao: Conversat
                     thinking = m.thinking,
                     at = m.at,
                     toolsJson = if (m.tools.isEmpty()) "" else json.encodeToString(toolsSerializer, m.tools),
+                    filesJson = if (m.files.isEmpty()) "" else json.encodeToString(filesSerializer, m.files),
                 )
             },
             conversation.messages.map { it.images },
@@ -170,6 +184,9 @@ class ConversationStore(private val context: Context, private val dao: Conversat
                 thinking = m.message.thinking,
                 at = m.message.at,
                 images = m.images.sortedBy { it.ord }.map { it.dataUrl },
+                files = m.message.filesJson.takeIf { it.isNotEmpty() }
+                    ?.let { runCatching { json.decodeFromString(filesSerializer, it) }.getOrNull() }
+                    ?: emptyList(),
                 tools = m.message.toolsJson.takeIf { it.isNotEmpty() }
                     ?.let { runCatching { json.decodeFromString(toolsSerializer, it) }.getOrNull() }
                     ?: emptyList(),

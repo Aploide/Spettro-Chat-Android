@@ -59,8 +59,10 @@ fun SettingsSheet(
     plan: String,
     streamingAnimations: Boolean,
     hapticFeedback: Boolean,
+    autoCompact: Boolean,
     onSetStreamingAnimations: (Boolean) -> Unit,
     onSetHapticFeedback: (Boolean) -> Unit,
+    onSetAutoCompact: (Boolean) -> Unit,
     /** Persisted "always allow" grants for sensitive tools: consentKey → display label. */
     toolGrants: List<Pair<String, String>>,
     onRevokeConsent: (String) -> Unit,
@@ -123,6 +125,13 @@ fun SettingsSheet(
                     CardDivider()
                     SettingRow("Haptic feedback", "Subtle taps on send and receive.") {
                         GlassToggle(hapticFeedback, onSetHapticFeedback)
+                    }
+                    CardDivider()
+                    SettingRow(
+                        "Auto-compact chats",
+                        "Summarize long chats automatically so they stay within the model's memory.",
+                    ) {
+                        GlassToggle(autoCompact, onSetAutoCompact)
                     }
                 }
 

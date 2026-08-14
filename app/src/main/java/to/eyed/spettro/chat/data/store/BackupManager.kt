@@ -23,6 +23,7 @@ data class ExportedSettings(
     val thinkingLevel: String = "",
     val streamingAnimations: Boolean = true,
     val hapticFeedback: Boolean = true,
+    val autoCompact: Boolean = true,
 )
 
 /**
@@ -87,6 +88,7 @@ class BackupManager(
                 thinkingLevel = snapshot.thinkingLevel,
                 streamingAnimations = snapshot.streamingAnimations,
                 hapticFeedback = snapshot.hapticFeedback,
+                autoCompact = snapshot.autoCompact,
             ),
         )
         val out = context.contentResolver.openOutputStream(uri, "wt")
@@ -142,6 +144,7 @@ class BackupManager(
             if (s.thinkingLevel.isNotBlank()) prefs.saveThinkingLevel(s.thinkingLevel)
             prefs.saveStreamingAnimations(s.streamingAnimations)
             prefs.saveHapticFeedback(s.hapticFeedback)
+            prefs.saveAutoCompact(s.autoCompact)
             settingsChanged.tryEmit(Unit)
         }
 

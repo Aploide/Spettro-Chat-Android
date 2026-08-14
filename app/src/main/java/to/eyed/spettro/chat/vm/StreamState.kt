@@ -42,8 +42,15 @@ object ContextEstimator {
     /** Block sending once the history uses this share of the window. */
     const val BLOCK_RATIO = 0.85f
 
+    /**
+     * Compact automatically once a finished turn leaves the history above
+     * this share, so users normally never reach the [BLOCK_RATIO] hard stop.
+     */
+    const val AUTO_COMPACT_RATIO = 0.75f
+
     fun estimateTokens(messages: List<StoredMessage>): Int = messages.sumOf {
-        (it.content.length + it.thinking.length) / CHARS_PER_TOKEN + it.images.size * TOKENS_PER_IMAGE
+        (it.content.length + it.thinking.length + it.files.sumOf { f -> f.text.length }) / CHARS_PER_TOKEN +
+            it.images.size * TOKENS_PER_IMAGE
     }
 
     /** Used share of the model's window; 0 when the window is unknown. */
@@ -54,4 +61,7 @@ object ContextEstimator {
 
     fun isNearLimit(messages: List<StoredMessage>, contextWindow: Int): Boolean =
         usedRatio(messages, contextWindow) >= BLOCK_RATIO
+
+    fun shouldAutoCompact(messages: List<StoredMessage>, contextWindow: Int): Boolean =
+        usedRatio(messages, contextWindow) >= AUTO_COMPACT_RATIO
 }

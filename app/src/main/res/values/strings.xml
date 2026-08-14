@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Spettro Chat</string>
+    <!-- Label for the text-selection toolbar action (ACTION_PROCESS_TEXT). -->
+    <string name="process_text_label">Ask Spettro</string>
 </resources>

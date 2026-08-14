@@ -33,6 +33,7 @@ resolved set for a given build is available from `./gradlew :app:dependencies`.
 | Guava `listenablefuture` | The Guava Authors |
 | JSpecify | The JSpecify Authors |
 | [multiplatform-markdown-renderer](https://github.com/mikepenz/multiplatform-markdown-renderer) | Mike Penz |
+| [PdfBox-Android](https://github.com/TomRoush/PdfBox-Android) (`com.tom-roush:pdfbox-android`), a port of Apache PDFBox | Tom Roush; The Apache Software Foundation |
 
 ## MIT License
 

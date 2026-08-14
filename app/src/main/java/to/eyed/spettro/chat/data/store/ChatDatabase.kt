@@ -66,6 +66,8 @@ data class MessageEntity(
     val at: Long,
     /** Serialized List<StoredToolRun>; small (outputs are capped upstream). */
     val toolsJson: String,
+    /** Serialized List<StoredFile>; extracted text is capped upstream. */
+    val filesJson: String = "",
 )
 
 // Image data URLs can run to ~1 MB each; one per row keeps every row well
@@ -205,7 +207,7 @@ interface SkillDao {
         ConversationEntity::class, MessageEntity::class, MessageImageEntity::class,
         SkillEntity::class, MemoryEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class ChatDatabase : RoomDatabase() {
@@ -238,9 +240,15 @@ abstract class ChatDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN filesJson TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun build(context: Context): ChatDatabase =
             Room.databaseBuilder(context.applicationContext, ChatDatabase::class.java, "conversations.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }

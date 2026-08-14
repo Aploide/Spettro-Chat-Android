@@ -7,7 +7,7 @@ describes the client only; how the Spettro backend handles requests is out of sc
 
 | Data | Location |
 |---|---|
-| Conversations, messages, attached images, tool runs | Room database `conversations.db` |
+| Conversations, messages, attached images, extracted document text, tool runs | Room database `conversations.db` |
 | Skills you create | same database |
 | Memory facts | same database |
 | API key | DataStore, encrypted with the Android Keystore |
@@ -39,7 +39,7 @@ Clerk session.
 
 | Destination | What |
 |---|---|
-| `api.spettro.app` | Chat completions: the system prompt, conversation history, attached images, tool specs, and tool results. Also the model list and account status. |
+| `api.spettro.app` | Chat completions: the system prompt, conversation history, attached images and document text, tool specs, and tool results. Also the model list and account status. |
 | `spettro.app` | Only at sign-in and sign-out: user sync, key minting, key revocation, authenticated with the Clerk session JWT. |
 | Clerk | The OAuth sign-in flow itself. |
 | `html.duckduckgo.com` | Search queries, only when the model calls `web-search`. |
@@ -47,7 +47,10 @@ Clerk session.
 | MCP servers you configure | Tool arguments for calls you approved, plus whatever auth header you configured. |
 
 Attached images are downscaled to a 1568 px long edge and re-encoded as JPEG before they are
-sent or stored.
+sent or stored. Attached documents (PDF and text files) are reduced to extracted text on
+attach — the original file never leaves the app that provided it — capped at 60,000
+characters per file. Content shared into the app from other apps (share sheet, "Ask
+Spettro" text selection) only prefills the composer; nothing is sent until you tap send.
 
 Nothing is sent to analytics, crash-reporting, or advertising services. The app declares no
 such dependency.

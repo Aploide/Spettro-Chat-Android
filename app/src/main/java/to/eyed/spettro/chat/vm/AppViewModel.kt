@@ -102,6 +102,9 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     private val _hapticFeedback = MutableStateFlow(true)
     val hapticFeedback: StateFlow<Boolean> = _hapticFeedback.asStateFlow()
 
+    private val _autoCompact = MutableStateFlow(true)
+    val autoCompact: StateFlow<Boolean> = _autoCompact.asStateFlow()
+
     private var loginJob: Job? = null
 
     init {
@@ -117,6 +120,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             _thinkingLevel.value = ThinkingLevel.fromId(snapshot.thinkingLevel)
             _streamingAnimations.value = snapshot.streamingAnimations
             _hapticFeedback.value = snapshot.hapticFeedback
+            _autoCompact.value = snapshot.autoCompact
             if (snapshot.apiKey != null) {
                 _authState.value = AuthState.SignedIn
                 refreshAccountAndModels()
@@ -136,6 +140,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                 _thinkingLevel.value = ThinkingLevel.fromId(s.thinkingLevel)
                 _streamingAnimations.value = s.streamingAnimations
                 _hapticFeedback.value = s.hapticFeedback
+                _autoCompact.value = s.autoCompact
             }
         }
     }
@@ -298,6 +303,11 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     fun setHapticFeedback(on: Boolean) {
         _hapticFeedback.value = on
         viewModelScope.launch { prefs.saveHapticFeedback(on) }
+    }
+
+    fun setAutoCompact(on: Boolean) {
+        _autoCompact.value = on
+        viewModelScope.launch { prefs.saveAutoCompact(on) }
     }
 
     class Factory(private val container: AppContainer) : ViewModelProvider.Factory {

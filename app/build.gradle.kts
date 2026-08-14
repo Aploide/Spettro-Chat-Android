@@ -85,6 +85,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.clerk.android.api)
     implementation(libs.markdown.renderer.m3)
+    implementation(libs.pdfbox.android)
     implementation(libs.icons.lucide)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

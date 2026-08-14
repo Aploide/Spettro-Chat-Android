@@ -34,6 +34,10 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
 
     val activeConversation: Conversation? get() = engine.activeConversation
 
+    // Content shared in from other apps; ChatRoot prefills the composer with it.
+    val sharedPayload get() = container.shareInbox.pending
+    fun consumeSharedPayload() = container.shareInbox.clear()
+
     // Consent gate + permission bridge, surfaced for ChatRoot and Settings.
     val consentPending get() = container.consent.pending
     val permissionPending get() = container.permissions.pending
@@ -100,8 +104,13 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     fun declineQuestions() = engine.declineQuestions()
     fun activeChatHasImages(): Boolean = engine.activeChatHasImages()
 
-    fun send(text: String, images: List<String>, model: ModelInfo?, thinking: ThinkingLevel) =
-        engine.send(text, images, model, thinking)
+    fun send(
+        text: String,
+        images: List<String>,
+        files: List<to.eyed.spettro.chat.data.store.StoredFile>,
+        model: ModelInfo?,
+        thinking: ThinkingLevel,
+    ) = engine.send(text, images, files, model, thinking)
 
     fun compact(model: ModelInfo?) = engine.compact(model)
 

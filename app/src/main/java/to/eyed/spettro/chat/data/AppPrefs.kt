@@ -34,6 +34,7 @@ class AppPrefs(private val context: Context) {
         val thinkingLevel = stringPreferencesKey("thinking_level")
         val streamingAnimations = booleanPreferencesKey("streaming_animations")
         val hapticFeedback = booleanPreferencesKey("haptic_feedback")
+        val autoCompact = booleanPreferencesKey("auto_compact")
         val consentAlways = stringSetPreferencesKey("tool_consent_always")
         val remindersJson = stringPreferencesKey("reminders_json")
         val mcpServersJson = stringPreferencesKey("mcp_servers")
@@ -53,6 +54,7 @@ class AppPrefs(private val context: Context) {
         val thinkingLevel: String,
         val streamingAnimations: Boolean,
         val hapticFeedback: Boolean,
+        val autoCompact: Boolean,
     )
 
     // The API key is needed synchronously by the request interceptor; keep an
@@ -90,6 +92,7 @@ class AppPrefs(private val context: Context) {
             thinkingLevel = p[Keys.thinkingLevel] ?: "high",
             streamingAnimations = p[Keys.streamingAnimations] ?: true,
             hapticFeedback = p[Keys.hapticFeedback] ?: true,
+            autoCompact = p[Keys.autoCompact] ?: true,
         )
     }
 
@@ -147,6 +150,14 @@ class AppPrefs(private val context: Context) {
 
     suspend fun saveHapticFeedback(on: Boolean) {
         context.dataStore.edit { it[Keys.hapticFeedback] = on }
+    }
+
+    /** Whether long chats are summarized automatically; read per turn by the engine. */
+    suspend fun autoCompact(): Boolean =
+        context.dataStore.data.first()[Keys.autoCompact] ?: true
+
+    suspend fun saveAutoCompact(on: Boolean) {
+        context.dataStore.edit { it[Keys.autoCompact] = on }
     }
 
     // --- Consent gate ("always allow" decisions for sensitive tools) ---

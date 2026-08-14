@@ -65,6 +65,7 @@ class ChatEngine(
     private val memory: to.eyed.spettro.chat.data.memory.MemoryStore,
     private val consent: ConsentGate,
     private val permissions: PermissionBridge,
+    private val prefs: to.eyed.spettro.chat.data.AppPrefs,
     private val unauthorized: MutableSharedFlow<Unit>,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -154,6 +155,9 @@ class ChatEngine(
             preference about the user (name, language, tastes, ongoing projects) — one short line per fact.
             Use forget-memory when the user corrects or retracts something, or asks you to forget it.
             A Memory section appears below when anything is remembered; honor it without re-asking.
+            The user can attach documents; each arrives inline in the message as an
+            <attached-file name="..."> block holding the file's extracted text — treat it as the
+            user's file and answer from its contents.
             When a decision is genuinely the user's to make and guessing would waste work, use ask-user
             to present the choice as a form instead of asking in prose.
             During longer multi-tool runs, use the comment tool to report meaningful progress steps.
@@ -285,9 +289,15 @@ class ChatEngine(
     fun activeChatHasImages(): Boolean =
         activeConversation?.messages?.any { it.images.isNotEmpty() } == true
 
-    fun send(text: String, images: List<String>, model: ModelInfo?, thinking: ThinkingLevel) {
+    fun send(
+        text: String,
+        images: List<String>,
+        files: List<to.eyed.spettro.chat.data.store.StoredFile>,
+        model: ModelInfo?,
+        thinking: ThinkingLevel,
+    ) {
         val trimmed = text.trim()
-        if ((trimmed.isEmpty() && images.isEmpty()) || sendJob?.isActive == true) return
+        if ((trimmed.isEmpty() && images.isEmpty() && files.isEmpty()) || sendJob?.isActive == true) return
         if (model == null) {
             _stream.value = StreamState.Error("Your plan has no models enabled yet.")
             return
@@ -310,8 +320,8 @@ class ChatEngine(
         }
 
         val now = System.currentTimeMillis()
-        val userMsg = StoredMessage("user", trimmed, at = now, images = images)
-        val titleSeed = trimmed.ifBlank { "Image" }
+        val userMsg = StoredMessage("user", trimmed, at = now, images = images, files = files)
+        val titleSeed = trimmed.ifBlank { files.firstOrNull()?.name ?: "Image" }
         val isFirstMessage = activeConversation?.messages?.isEmpty() != false
         val conv = activeConversation?.let {
             it.copy(messages = it.messages + userMsg, updatedAt = now)
@@ -377,44 +387,9 @@ class ChatEngine(
         _stream.value = StreamState.Compacting
         beginRun()
         sendJob = scope.launch {
-            // Images are dropped from the request: they're the bulk of the
-            // context, and non-vision models must be able to compact too.
-            val history = conv.messages.map { OutgoingMessage(role = it.role, text = it.content) } +
-                OutgoingMessage(
-                    role = "user",
-                    text = "Summarize our conversation so far into a compact brief that preserves " +
-                        "every fact, decision, constraint, code snippet, and open question needed " +
-                        "to continue seamlessly. Reply with only the summary.",
-                )
-            val acc = StringBuilder()
             try {
-                api.chatStream(model.id, history, null).collect { event ->
-                    when (event) {
-                        is ChatEvent.Text -> acc.append(event.delta)
-                        is ChatEvent.RateLimited -> _stream.value = StreamState.RateLimited(event.retryAfterSeconds)
-                        is ChatEvent.Done -> {
-                            val summary = acc.toString().trim()
-                            if (summary.isBlank()) {
-                                _stream.value = StreamState.Error("Compacting failed — the model returned nothing.")
-                            } else {
-                                update(conv.id) {
-                                    it.copy(
-                                        messages = listOf(
-                                            StoredMessage(
-                                                role = "assistant",
-                                                content = "**Conversation compacted.** Summary of the discussion so far:\n\n$summary",
-                                                at = System.currentTimeMillis(),
-                                            ),
-                                        ),
-                                        updatedAt = System.currentTimeMillis(),
-                                    )
-                                }
-                                _stream.value = StreamState.Idle
-                            }
-                        }
-                        else -> Unit
-                    }
-                }
+                performCompaction(conv, model)
+                _stream.value = StreamState.Idle
                 _events.tryEmit(EngineEvent.RunFinished(conv.id, currentTitle(conv.id), failed = false))
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -427,6 +402,78 @@ class ChatEngine(
                 _isRunning.value = false
             }
         }
+    }
+
+    /**
+     * Streams a self-contained summary of [conv] and replaces its history
+     * with it. Throws on failure; callers own the stream state around it.
+     */
+    private suspend fun performCompaction(conv: Conversation, model: ModelInfo) {
+        // Images are dropped from the request: they're the bulk of the
+        // context, and non-vision models must be able to compact too. File
+        // text stays — its facts belong in the summary.
+        val history = conv.messages.map { OutgoingMessage(role = it.role, text = wireText(it)) } +
+            OutgoingMessage(
+                role = "user",
+                text = "Summarize our conversation so far into a compact brief that preserves " +
+                    "every fact, decision, constraint, code snippet, and open question needed " +
+                    "to continue seamlessly. Reply with only the summary.",
+            )
+        val acc = StringBuilder()
+        api.chatStream(model.id, history, null).collect { event ->
+            when (event) {
+                is ChatEvent.Text -> acc.append(event.delta)
+                is ChatEvent.RateLimited -> _stream.value = StreamState.RateLimited(event.retryAfterSeconds)
+                else -> Unit
+            }
+        }
+        val summary = acc.toString().trim()
+        check(summary.isNotBlank()) { "the model returned nothing" }
+        update(conv.id) {
+            it.copy(
+                messages = listOf(
+                    StoredMessage(
+                        role = "assistant",
+                        content = "**Conversation compacted.** Summary of the discussion so far:\n\n$summary",
+                        at = System.currentTimeMillis(),
+                    ),
+                ),
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    /**
+     * Runs an automatic compaction at the end of a turn that left the chat
+     * above [ContextEstimator.AUTO_COMPACT_RATIO]. Best-effort: a failure
+     * leaves the history as-is and the 85% hard stop still protects the
+     * next send.
+     */
+    private suspend fun maybeAutoCompact(conversationId: String, model: ModelInfo) {
+        if (!prefs.autoCompact()) return
+        val conv = _tempChat.value?.takeIf { it.id == conversationId }
+            ?: _conversations.value.firstOrNull { it.id == conversationId }
+            ?: return
+        if (!ContextEstimator.shouldAutoCompact(conv.messages, model.contextWindow)) return
+        _stream.value = StreamState.Compacting
+        try {
+            performCompaction(conv, model)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * The message text as sent to the model: attached documents ride inline
+     * ahead of the user's words, in the blocks the system prompt describes.
+     */
+    private fun wireText(msg: StoredMessage): String {
+        if (msg.files.isEmpty()) return msg.content
+        val blocks = msg.files.joinToString("\n\n") {
+            "<attached-file name=\"${it.name.replace("\"", "'")}\">\n${it.text}\n</attached-file>"
+        }
+        return if (msg.content.isBlank()) blocks else "$blocks\n\n${msg.content}"
     }
 
     /** Drops the trailing assistant reply and re-runs the last user turn. */
@@ -474,7 +521,7 @@ class ChatEngine(
                 (activeSkill?.let { "\n\n## Active skill: ${it.name}\n${it.instructions}" } ?: "")
             val history = mutableListOf(OutgoingMessage(role = "system", text = systemPrompt))
             conv.messages.mapTo(history) {
-                OutgoingMessage(role = it.role, text = it.content, imageDataUrls = it.images)
+                OutgoingMessage(role = it.role, text = wireText(it), imageDataUrls = it.images)
             }
             // Rebuilt per run so the catalog in its description stays current.
             val loadSkillSpec = runCatching { skills.loadSkillSpec() }.getOrNull()
@@ -577,6 +624,9 @@ class ChatEngine(
                     }
                 }
                 appendAssistant(textAcc.toString(), reasoningAcc.toString(), toolRuns.toStored())
+                // A turn that grew the chat past the auto-compact threshold is
+                // folded into a summary now, before the user sends again.
+                maybeAutoCompact(conv.id, model)
                 _stream.value = StreamState.Idle
                 _events.tryEmit(EngineEvent.RunFinished(conv.id, currentTitle(conv.id), failed = false))
             } catch (e: kotlinx.coroutines.CancellationException) {

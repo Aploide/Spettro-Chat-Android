@@ -20,3 +20,7 @@
 # The Clerk SDK deserializes its API models reflectively via kotlinx.serialization.
 -keep class com.clerk.api.** { *; }
 -dontwarn com.clerk.api.**
+
+# PdfBox-Android optionally decodes JPEG2000 images through a JP2 library we
+# don't ship; PDFs embedding JPX images just skip those images at runtime.
+-dontwarn com.gemalto.jp2.JP2Decoder
