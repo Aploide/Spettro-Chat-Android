@@ -1,21 +1,22 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Project ProGuard/R8 rules. Library-specific keep-rules (Room, OkHttp,
+# kotlinx.serialization, Compose) ship inside the libraries as consumer rules
+# and do not need repeating here.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Readable crash reports from the minified build.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# kotlinx.serialization: the runtime's embedded rules cover classes whose
+# serializers are referenced statically, but keep the generated serializer
+# lookup for our own models defensively — the chat store and export/import
+# depend on them and the classes are tiny.
+-keepclassmembers @kotlinx.serialization.Serializable class to.eyed.spettro.chat.** {
+    static **$* *;
+}
+-keepclassmembers class to.eyed.spettro.chat.**$$serializer {
+    *** INSTANCE;
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# The Clerk SDK deserializes its API models reflectively via kotlinx.serialization.
+-keep class com.clerk.api.** { *; }
+-dontwarn com.clerk.api.**

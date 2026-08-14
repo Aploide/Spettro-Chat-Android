@@ -1,5 +1,6 @@
 package to.eyed.spettro.chat.vm
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -158,6 +159,49 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         _conversations.value = emptyList()
         _activeId.value = null
         viewModelScope.launch { store.deleteAll() }
+    }
+
+    /** One-shot outcome of an export/import, surfaced as a toast by the UI. */
+    private val _dataNotice = MutableStateFlow<String?>(null)
+    val dataNotice: StateFlow<String?> = _dataNotice.asStateFlow()
+
+    fun clearDataNotice() {
+        _dataNotice.value = null
+    }
+
+    fun exportChats(uri: Uri) {
+        viewModelScope.launch {
+            _dataNotice.value = try {
+                val count = store.exportTo(uri)
+                if (count == 0) "No chats to export yet."
+                else "Exported $count ${if (count == 1) "chat" else "chats"}."
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                "Export failed: ${e.message?.take(120) ?: "could not write the file"}"
+            }
+        }
+    }
+
+    fun importChats(uri: Uri) {
+        viewModelScope.launch {
+            _dataNotice.value = try {
+                val result = store.importFrom(uri)
+                _conversations.value = store.loadAll()
+                when {
+                    result.imported == 0 && result.skipped == 0 -> "The file contains no chats."
+                    result.imported == 0 -> "Nothing to import — every chat in the file is already here."
+                    else -> "Imported ${result.imported} ${if (result.imported == 1) "chat" else "chats"}" +
+                        (if (result.skipped > 0) " (${result.skipped} already up to date)." else ".")
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: kotlinx.serialization.SerializationException) {
+                "Import failed: this file is not a Spettro chat export."
+            } catch (e: Exception) {
+                "Import failed: ${e.message?.take(120) ?: "could not read the file"}"
+            }
+        }
     }
 
     fun stopStreaming() {

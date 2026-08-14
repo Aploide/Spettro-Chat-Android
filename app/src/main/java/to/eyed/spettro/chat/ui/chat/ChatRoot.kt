@@ -100,6 +100,23 @@ fun ChatRoot(
     var showModelSheet by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
+    val exportChatsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri -> uri?.let(chatVm::exportChats) }
+    // Broad mime list: cloud drives and messengers often relabel .json files.
+    val importChatsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let(chatVm::importChats) }
+
+    // Export/import outcomes surface as toasts so they outlive the sheet.
+    val dataNotice by chatVm.dataNotice.collectAsState()
+    LaunchedEffect(dataNotice) {
+        dataNotice?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            chatVm.clearDataNotice()
+        }
+    }
+
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(4),
     ) { uris ->
@@ -316,6 +333,16 @@ fun ChatRoot(
             onSetHapticFeedback = appVm::setHapticFeedback,
             // Pricing and billing live on spettro.app; hand off to the browser.
             onManageSubscription = { onOpenUrl(SpettroApi.PRICING_URL) },
+            onExportChats = {
+                val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                    .format(java.util.Date())
+                exportChatsLauncher.launch("spettro-chats-$date.json")
+            },
+            onImportChats = {
+                importChatsLauncher.launch(
+                    arrayOf("application/json", "application/octet-stream", "text/plain"),
+                )
+            },
             onDeleteAllChats = { chatVm.deleteAll() },
             onSignOut = {
                 showSettings = false

@@ -48,6 +48,8 @@ fun SettingsSheet(
     onSetStreamingAnimations: (Boolean) -> Unit,
     onSetHapticFeedback: (Boolean) -> Unit,
     onManageSubscription: () -> Unit,
+    onExportChats: () -> Unit,
+    onImportChats: () -> Unit,
     onDeleteAllChats: () -> Unit,
     onSignOut: () -> Unit,
     onDismiss: () -> Unit,
@@ -122,6 +124,16 @@ fun SettingsSheet(
                 RowDivider()
                 SettingRow("Haptic feedback", "Subtle taps on send and receive.") {
                     GlassToggle(hapticFeedback, onSetHapticFeedback)
+                }
+
+                SectionDivider()
+                SectionHeader("Chats")
+                SettingRow("Export chats", "Save every chat to a single file you can move to another device.") {
+                    GlassButton("Export", onClick = onExportChats)
+                }
+                RowDivider()
+                SettingRow("Import chats", "Merge chats from a previously exported file. Nothing here is overwritten by older copies.") {
+                    GlassButton("Import", onClick = onImportChats)
                 }
 
                 SectionDivider()
