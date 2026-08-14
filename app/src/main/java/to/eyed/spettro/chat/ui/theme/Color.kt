@@ -2,9 +2,12 @@ package to.eyed.spettro.chat.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Spettro Chat is strictly monochrome: every color has equal RGB channels.
+// Spettro Chat is monochrome — every color has equal RGB channels — with one
+// deliberate exception: red, reserved exclusively for destructive actions.
 // Flat dark surfaces, no gradients, no glow.
 object Ink {
+    val Danger = Color(0xFFE5484D) // destructive text/labels
+    val DangerDim = Color(0x26E5484D) // destructive control fill (15% red)
     val Pitch = Color(0xFF000000) // app background
     val I900 = Color(0xFF0A0A0A) // sidebar base, code blocks
     val I850 = Color(0xFF121212) // low raised panels

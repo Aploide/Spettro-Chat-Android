@@ -87,6 +87,10 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             val snapshot = prefs.load()
             _cachedEmail.value = snapshot.email
             _cachedPlan.value = snapshot.plan
+            // Paint the cached account and model list immediately; the network
+            // refresh below replaces them when (and if) it succeeds.
+            _account.value = snapshot.account
+            _models.value = snapshot.models
             _selectedModel.value = snapshot.selectedModel
             _thinkingLevel.value = ThinkingLevel.fromId(snapshot.thinkingLevel)
             _streamingAnimations.value = snapshot.streamingAnimations
@@ -160,6 +164,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             try {
                 val list = api.listModels()
                 _models.value = list
+                prefs.saveModels(list)
                 // Server order matters: data[0] is the plan default.
                 if (_selectedModel.value.isBlank() || list.none { it.id == _selectedModel.value }) {
                     list.firstOrNull()?.let { selectModel(it.id) }
@@ -174,7 +179,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                 _account.value = acct
                 _cachedEmail.value = acct.email
                 _cachedPlan.value = acct.planOrFree
-                prefs.saveAccount(acct.email, acct.planOrFree, acct.planStatus)
+                prefs.saveAccount(acct)
             } catch (e: UnauthorizedException) {
                 signOut(local = true)
             } catch (_: Exception) {

@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,12 +68,13 @@ fun SettingsSheet(
             }
             Hairline()
 
-            // One flat list - there is too little here to justify tabs.
+            // Sectioned flat list - too little here to justify tabs.
             Column(
                 Modifier
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 24.dp, vertical = 8.dp),
             ) {
+                SectionHeader("Account")
                 SettingRow("Signed in as", email.ifBlank { "—" }) {
                     Box(
                         Modifier
@@ -107,8 +109,13 @@ fun SettingsSheet(
                 SettingRow("Subscription", "Plans and billing are managed on spettro.app.") {
                     GlassButton("Manage", onClick = onManageSubscription)
                 }
-
                 RowDivider()
+                SettingRow("Sign out", "Removes your session key from this device.") {
+                    GlassButton("Sign out", onClick = onSignOut, textColor = Ink.I300)
+                }
+
+                SectionDivider()
+                SectionHeader("Customization")
                 SettingRow("Streaming animations", "Fade tokens in as they arrive.") {
                     GlassToggle(streamingAnimations, onSetStreamingAnimations)
                 }
@@ -117,17 +124,17 @@ fun SettingsSheet(
                     GlassToggle(hapticFeedback, onSetHapticFeedback)
                 }
 
-                RowDivider()
+                SectionDivider()
+                SectionHeader("Danger zone", color = Ink.Danger)
                 var confirming by remember { mutableStateOf(false) }
                 SettingRow(
                     "Delete all chats",
                     if (confirming) "Tap again to confirm. Irreversible." else "Chats are stored only on this device.",
                 ) {
-                    // Destructive = inverted white, no red (monochrome rule).
                     Box(
                         Modifier
                             .clip(RoundedCornerShape(Radii.control))
-                            .background(if (confirming) Ink.White else whiteA(0.85f))
+                            .background(if (confirming) Ink.Danger else Ink.DangerDim)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
@@ -145,13 +152,9 @@ fun SettingsSheet(
                             if (confirming) "Confirm" else "Delete",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Ink.Pitch,
+                            color = if (confirming) Ink.White else Ink.Danger,
                         )
                     }
-                }
-                RowDivider()
-                SettingRow("Sign out", "Removes your session key from this device.") {
-                    GlassButton("Sign out", onClick = onSignOut, textColor = Ink.I300)
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -176,6 +179,30 @@ private fun SettingRow(title: String, description: String, trailing: @Composable
 }
 
 @Composable
+private fun SectionHeader(title: String, color: Color = Ink.I500) {
+    Text(
+        title.uppercase(),
+        fontSize = 10.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.5.sp,
+        color = color,
+        modifier = Modifier.padding(top = 14.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
 private fun RowDivider() {
     Box(Modifier.fillMaxWidth().height(1.dp).background(whiteA(0.06f)))
+}
+
+/** Heavier break between setting groups. */
+@Composable
+private fun SectionDivider() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+            .height(1.dp)
+            .background(whiteA(0.10f)),
+    )
 }

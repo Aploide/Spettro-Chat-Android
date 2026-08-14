@@ -247,6 +247,7 @@ fun Sidebar(
                             GhostIconButton(
                                 Lucide.Trash2, "Delete chat",
                                 onClick = { onDelete(conv.id) }, size = 32.dp, iconSize = 14.dp,
+                                tint = Ink.Danger,
                             )
                         }
                     }

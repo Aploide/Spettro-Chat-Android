@@ -50,7 +50,6 @@ import kotlinx.coroutines.launch
 import to.eyed.spettro.chat.data.ImageUtil
 import to.eyed.spettro.chat.data.api.SpettroApi
 import to.eyed.spettro.chat.ui.components.surfaceCard
-import to.eyed.spettro.chat.ui.pricing.PricingScreen
 import to.eyed.spettro.chat.ui.settings.SettingsSheet
 import to.eyed.spettro.chat.ui.theme.Ink
 import to.eyed.spettro.chat.ui.theme.Radii
@@ -98,7 +97,6 @@ fun ChatRoot(
     var input by rememberSaveable { mutableStateOf("") }
     var attachments by remember { mutableStateOf(listOf<PendingImage>()) }
     var showSettings by remember { mutableStateOf(false) }
-    var showPricing by remember { mutableStateOf(false) }
     var showModelSheet by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
@@ -316,10 +314,8 @@ fun ChatRoot(
             hapticFeedback = haptics,
             onSetStreamingAnimations = appVm::setStreamingAnimations,
             onSetHapticFeedback = appVm::setHapticFeedback,
-            onManageSubscription = {
-                showSettings = false
-                showPricing = true
-            },
+            // Pricing and billing live on spettro.app; hand off to the browser.
+            onManageSubscription = { onOpenUrl(SpettroApi.PRICING_URL) },
             onDeleteAllChats = { chatVm.deleteAll() },
             onSignOut = {
                 showSettings = false
@@ -329,15 +325,6 @@ fun ChatRoot(
         )
     }
 
-    if (showPricing) {
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            PricingScreen(
-                currentPlan = plan,
-                onUpgrade = { onOpenUrl(SpettroApi.PRICING_URL) },
-                onClose = { showPricing = false },
-            )
-        }
-    }
 }
 
 /**
