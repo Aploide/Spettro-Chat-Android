@@ -104,6 +104,38 @@ it returns.
 - Do not put message content, reasoning, or tool output into notifications.
 - Report security issues privately to the maintainers rather than in a public issue.
 
+## Licensing of contributions
+
+The project is licensed under the GNU General Public License, version 3 or later (see
+[LICENSE](../LICENSE)), with two additional terms under GPLv3 section 7
+(see [LICENSE-EXCEPTION](../LICENSE-EXCEPTION)): a linking exception for the proprietary
+Google Play services and Play Integrity libraries that the sign-in SDK requires, and a
+trademark term covering the Spettro and Eyed® names, logos, and icons.
+
+By opening a pull request you agree that your contribution is licensed under those same
+terms.
+
+**Branding.** The Spettro, Eyed, and Eyed® Softwares names, logos, and app icons are owned by
+Carlo Esposito and Eyed® Softwares, and are not covered by the GPL — the Eyed® logo is a
+registered trademark (UIBM no. 302024000146292). Don't add, alter, or repurpose brand assets
+in a PR, and rebrand any fork you distribute.
+
+**Scope.** Only this client is GPL-covered. The Spettro backend, the spettro.app web app, and
+the hosted infrastructure are proprietary; patches here cannot assume anything about them
+beyond the HTTP contract in `data/api/`.
+
+**New dependencies.** Apache-2.0 and MIT/BSD/ISC dependencies are fine — they flow into
+GPLv3 without friction. Note that Apache-2.0 is compatible with GPLv3 but *not* GPLv2, which
+is one reason the license notice says "version 3 or later".
+
+Do not add a dependency under a GPL-incompatible license. That includes proprietary SDKs:
+the linking exception is scoped to specific named components and does not generalize, so a
+new closed-source dependency would require the copyright holder to widen it — raise it in an
+issue first rather than in a PR.
+
+When you add or remove a bundled dependency, update
+[THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) in the same PR.
+
 ## Pull requests
 
 - One logical change per PR.

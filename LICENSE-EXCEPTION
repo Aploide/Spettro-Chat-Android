@@ -1,0 +1,109 @@
+Spettro Chat for Android
+Additional terms under GNU GPL version 3 section 7
+
+Copyright (C) 2026 Carlo Esposito / Eyed® Softwares
+
+This program is licensed under the GNU General Public License, version 3 or
+(at your option) any later version ("the GPL"), whose full text is in the file
+LICENSE. Under section 7 of the GPL, the copyright holder states the following
+additional terms. They apply to this program and to any covered work based
+on it.
+
+
+================================================================================
+PART 1 — ADDITIONAL PERMISSION (LINKING EXCEPTION)
+================================================================================
+
+You have permission to combine, link, or otherwise convey this program (or a
+modified version of it) with the components listed under "Covered components"
+below, and to convey the resulting combined work under the terms of the GPL
+together with this exception, notwithstanding that those components are
+distributed under terms that are not compatible with the GPL.
+
+
+COVERED COMPONENTS
+
+  1. The Google Play services client libraries — Maven coordinates
+     `com.google.android.gms:*` — and the Google Identity libraries —
+     `com.google.android.libraries.identity.googleid:*` — distributed under
+     the Android Software Development Kit License Agreement.
+
+  2. The Google Play Core and Play Integrity libraries —
+     `com.google.android.play:*` — distributed under the Play Core Software
+     Development Kit Terms of Service and the Play Integrity API Terms of
+     Service.
+
+  3. The Clerk Android SDK — `com.clerk:*` — together with any of the
+     components in items 1 and 2 that it requires in order to function.
+
+  4. Later versions, renamed artifacts, and direct successors of any of the
+     above that serve the same purpose.
+
+
+SCOPE AND LIMITS
+
+You must obey the GPL in all respects for all of the code used other than the
+components named above. This exception applies only to those components; it
+does not extend to any other software distributed under terms incompatible
+with the GPL.
+
+This exception grants you no rights in the covered components themselves.
+Those components remain governed exclusively by their own license terms, which
+you must satisfy separately.
+
+Nothing in this exception limits the rights the GPL grants you with respect to
+this program's own source code, including your right to receive, modify, and
+redistribute it.
+
+
+EXTENDING OR REMOVING THIS PERMISSION
+
+If you modify this program, you may extend this permission to your version of
+it, but you are not obliged to do so. If you do not wish to do so, delete this
+Part 1 from your version.
+
+As permitted by section 7 of the GPL, any recipient may remove this additional
+permission from any copy they convey, or from any part of it.
+
+
+================================================================================
+PART 2 — TRADEMARKS (GPL SECTION 7(e))
+================================================================================
+
+As permitted by section 7(e) of the GPL, this license declines to grant rights
+under trademark law for use of certain trade names, trademarks, and service
+marks.
+
+The Eyed® logo is a registered trademark of Carlo Esposito, registered with
+the Italian Patent and Trademark Office (UIBM) under registration number
+302024000146292.
+
+Spettro, Eyed, Eyed® Softwares, and all associated logos, wordmarks, product
+names, icons, and other brand assets are the property of Carlo Esposito and
+Eyed® Softwares. See <https://aploi.de/eyed-TOS/>.
+
+The GPL is a copyright license. It grants you rights in this program's source
+code; it grants you no license, express or implied, to use these names or
+marks, and no such license is granted here.
+
+Accordingly:
+
+  1. You may state truthfully that your work is derived from, based on, or
+     compatible with Spettro. Nominative, descriptive reference of that kind
+     is not restricted.
+
+  2. You may not use the Spettro or Eyed names, logos, wordmarks, or icons as
+     the branding of a modified version, nor in any way that suggests that a
+     modified version is produced, endorsed, sponsored, or supported by Carlo
+     Esposito or Eyed® Softwares. Unauthorized use, reproduction, or
+     distribution of the Eyed® logo without express written consent is
+     prohibited.
+
+  3. If you distribute a modified version, replace the app name, application
+     id, icon, and any other brand assets with your own before distributing
+     it.
+
+The brand assets in this repository are not licensed under the GPL and are
+excluded from the grant it makes. Removing them from a fork satisfies this
+requirement; nothing in this Part 2 restricts your rights in the program's
+source code.

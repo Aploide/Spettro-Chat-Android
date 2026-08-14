@@ -114,7 +114,67 @@ Issues and pull requests are welcome. Please read
 [docs/contributing.md](docs/contributing.md) first — it covers the conventions the codebase
 follows and the checks to run before opening a PR.
 
+Contributions are accepted under the same license as the project.
+
 ## Security
 
 If you find a security issue, please report it privately to the maintainers rather than
 opening a public issue.
+
+## License
+
+Copyright (C) 2026 Carlo Esposito / Eyed® Softwares
+
+This program is free software: you can redistribute it and/or modify it under the terms of
+the GNU General Public License as published by the Free Software Foundation, either version
+3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with this program.
+If not, see <https://www.gnu.org/licenses/>.
+
+The full text is in [LICENSE](LICENSE). SPDX identifier: `GPL-3.0-or-later`.
+
+Two additional terms apply under GPLv3 section 7; both are in
+[LICENSE-EXCEPTION](LICENSE-EXCEPTION).
+
+### Linking exception
+
+The sign-in SDK pulls in Google Play services and the Play Integrity API, which are
+proprietary. So that the app can be built and distributed as a working whole, an
+**additional permission** allows this program to be combined with those components and
+conveyed under the GPL.
+
+The exception covers only those named components. Everything else must comply with the GPL
+as usual, and the exception grants no rights in the proprietary components themselves.
+
+### Trademarks
+
+The **Eyed®** logo is a registered trademark of Carlo Esposito, registered with the Italian
+Patent and Trademark Office (UIBM) under no. 302024000146292. **Spettro**, **Eyed**, **Eyed®
+Softwares**, and all associated logos, wordmarks, product names, icons, and other brand
+assets are the property of Carlo Esposito and Eyed® Softwares — see the
+[Eyed® Terms of Use](https://aploi.de/eyed-TOS/).
+
+The GPL is a copyright license and grants no rights in these marks; section 7(e) expressly
+permits declining to grant them, and this project does. You are free to say that your work
+is based on Spettro. You may **not** ship a modified version under the Spettro or Eyed name,
+logo, or icon, or in any way implying endorsement — rebrand a fork with your own name,
+application id, and assets. The brand assets in this repository are not covered by the GPL.
+
+None of this restricts your rights in the source code itself.
+
+### Third-party components
+
+Every bundled dependency and its license is listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Aside from the components named in the
+linking exception, the dependency tree is entirely Apache-2.0 and MIT.
+
+### Scope of this license
+
+This repository — the Spettro Chat Android client — is the GPL-covered work. The Spettro
+backend, the spettro.app web application, and any other hosted infrastructure the app talks
+to are proprietary and are **not** covered by this license.
