@@ -19,12 +19,17 @@ import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.CircleAlert
 import com.composables.icons.lucide.Clock
+import com.composables.icons.lucide.Code
+import com.composables.icons.lucide.FilePlus
+import com.composables.icons.lucide.FileText
 import com.composables.icons.lucide.Globe
+import com.composables.icons.lucide.History
 import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Link
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.MessageCircleQuestion
 import com.composables.icons.lucide.Smartphone
+import com.composables.icons.lucide.Terminal
 import com.composables.icons.lucide.Wrench
 import to.eyed.spettro.chat.data.tools.ToolRegistry
 import to.eyed.spettro.chat.ui.theme.Ink
@@ -85,5 +90,10 @@ internal fun toolIcon(run: ToolRunUi) = when {
     run.name == ToolRegistry.DEVICE_INFO -> Lucide.Smartphone
     run.name == ToolRegistry.ASK_USER -> Lucide.MessageCircleQuestion
     run.name == ToolRegistry.COMMENT -> Lucide.Info
+    run.name == ToolRegistry.SEARCH_HISTORY -> Lucide.History
+    run.name == ToolRegistry.RUN_JAVASCRIPT -> Lucide.Terminal
+    run.name == ToolRegistry.CREATE_FILE -> Lucide.FilePlus
+    run.name == ToolRegistry.GENERATE_PDF -> Lucide.FileText
+    run.name == ToolRegistry.RENDER_HTML -> Lucide.Code
     else -> Lucide.Wrench
 }

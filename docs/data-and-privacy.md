@@ -10,6 +10,9 @@ describes the client only; how the Spettro backend handles requests is out of sc
 | Conversations, messages, attached images, extracted document text, tool runs | Room database `conversations.db` |
 | Skills you create | same database |
 | Memory facts | same database |
+| Semantic-recall index (embedding vectors + text chunks, derived from chats and memory) | same database |
+| Files the assistant generates (create-file, generate-pdf, render-html) | `filesDir/artifacts`, app-private; listed and clearable under Settings → Your data |
+| The optional embedding model (~6 MB, downloaded only when you tap Download) | `filesDir/models` |
 | API key | DataStore, encrypted with the Android Keystore |
 | Account email, plan, and credit snapshot | DataStore (cache for instant first paint) |
 | Model list | DataStore (cache) |
@@ -45,6 +48,7 @@ Clerk session.
 | `html.duckduckgo.com` | Search queries, only when the model calls `web-search`. |
 | Any URL the model fetches | Only when the model calls `web-fetch`. |
 | MCP servers you configure | Tool arguments for calls you approved, plus whatever auth header you configured. |
+| `storage.googleapis.com` | One request, only if you tap Download under Settings → Semantic recall: fetching the embedding model file. No user data rides along. |
 
 Attached images are downscaled to a 1568 px long edge and re-encoded as JPEG before they are
 sent or stored. Attached documents (PDF and text files) are reduced to extracted text on
@@ -54,6 +58,12 @@ Spettro" text selection) only prefills the composer; nothing is sent until you t
 
 Nothing is sent to analytics, crash-reporting, or advertising services. The app declares no
 such dependency.
+
+Semantic recall (`search-history`) runs entirely on-device: chunking, embedding, and search
+never make a network request. `run-javascript` executes in a sandbox with no network and no
+device access, and rendered HTML views run in a WebView with network loads blocked — model-
+written code has no outbound path. Generated files stay in app-private storage until you
+yourself open or share one (via the system share sheet).
 
 ## Personal data on the device
 
@@ -110,6 +120,10 @@ Import merges; it never deletes:
 - Memories: deduplicated, original dates kept.
 - MCP servers: a known id is replaced by the imported config.
 - Settings: applied, and the UI reloads them without a restart.
+
+The semantic-recall index and generated artifact files are **not** exported: the index is
+derived data, rebuilt automatically from imported chats; artifact files are device-local
+outputs whose references simply show as unavailable on another device.
 
 Because an export can contain MCP tokens, full chat contents, and everything the assistant
 remembers about you, treat the file as sensitive.

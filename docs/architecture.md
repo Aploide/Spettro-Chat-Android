@@ -15,7 +15,9 @@ MainActivity ──▶ AppViewModel ─┐
    ChatEngine                    SpettroApi / SpettroWebApi     AppPrefs (DataStore)
         │                                                            │
         ├─▶ ConversationStore ──▶ ChatDatabase (Room)                └─▶ SecureStore
-        ├─▶ ToolRegistry ──▶ Web/Device/Calendar/Contacts/…
+        ├─▶ ToolRegistry ──▶ Web/Device/Calendar/Contacts/Js/Artifact/…
+        │        ├─▶ RecallIndex ──▶ EmbeddingService + EmbeddingDao
+        │        └─▶ ArtifactStore (filesDir/artifacts, FileProvider)
         ├─▶ McpRegistry ──▶ McpClient (one per server)
         ├─▶ SkillsRepository ──▶ SkillDao
         ├─▶ MemoryStore ──▶ MemoryDao
@@ -50,9 +52,11 @@ Two app-scoped `SharedFlow`s carry cross-cutting events:
 | `ToolRegistry` | Tool specs, labels, dispatch, and sensitivity metadata |
 | `McpRegistry` / `McpClient` | Remote MCP servers and a minimal Streamable HTTP client |
 | `SkillsRepository`, `MemoryStore` | Skills and cross-chat memory |
+| `RecallIndex` / `EmbeddingService` | On-device semantic index over chats and memory; powers `search-history` |
+| `ArtifactStore` | Files the assistant generates; app-private, shared via FileProvider |
 
 Room migrations are written by hand and never fall back destructively: chats exist only on
-the device, so a dropped table is permanent data loss. The database is at version 3
+the device, so a dropped table is permanent data loss. The database is at version 5
 (`conversations.db`).
 
 Message images are stored in their own table rather than inline. A single data URL can

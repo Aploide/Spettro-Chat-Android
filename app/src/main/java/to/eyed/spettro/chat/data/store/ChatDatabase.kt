@@ -181,6 +181,58 @@ interface MemoryDao {
     suspend fun deleteAll()
 }
 
+/**
+ * One embedded chunk of searchable history: either a memory fact or a slice
+ * of a past message. Vectors are float32, little-endian. [ownerKey] encodes
+ * what the chunk came from and is content-addressed, so re-indexing is a set
+ * difference rather than a rebuild.
+ */
+@Entity(
+    tableName = "embeddings",
+    indices = [Index("ownerKey", unique = true), Index("conversationId")],
+)
+data class EmbeddingEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** "memory" or "chat". */
+    val kind: String,
+    val ownerKey: String,
+    val conversationId: String?,
+    /** The chunk text itself — what a search hit returns as the snippet. */
+    val text: String,
+    /** Message timestamp or memory added-date, for dating search hits. */
+    val at: Long,
+    /** Which embedder produced the vector (e.g. "hash-1", "use-1"). */
+    val model: String,
+    val vector: ByteArray,
+)
+
+@Dao
+interface EmbeddingDao {
+    @Query("SELECT ownerKey FROM embeddings")
+    suspend fun ownerKeys(): List<String>
+
+    @Query("SELECT * FROM embeddings WHERE model = :model")
+    suspend fun byModel(model: String): List<EmbeddingEntity>
+
+    @Query("SELECT COUNT(*) FROM embeddings")
+    suspend fun count(): Int
+
+    @Query("SELECT COUNT(*) FROM embeddings WHERE model != :model")
+    suspend fun countNotFromModel(model: String): Int
+
+    @Insert
+    suspend fun insert(embeddings: List<EmbeddingEntity>)
+
+    @Query("DELETE FROM embeddings WHERE ownerKey IN (:ownerKeys)")
+    suspend fun deleteByOwnerKeys(ownerKeys: List<String>)
+
+    @Query("DELETE FROM embeddings WHERE model != :model")
+    suspend fun deleteNotFromModel(model: String)
+
+    @Query("DELETE FROM embeddings")
+    suspend fun deleteAll()
+}
+
 @Dao
 interface SkillDao {
     @Query("SELECT * FROM skills ORDER BY name COLLATE NOCASE")
@@ -205,15 +257,16 @@ interface SkillDao {
 @Database(
     entities = [
         ConversationEntity::class, MessageEntity::class, MessageImageEntity::class,
-        SkillEntity::class, MemoryEntity::class,
+        SkillEntity::class, MemoryEntity::class, EmbeddingEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class ChatDatabase : RoomDatabase() {
     abstract fun conversations(): ConversationDao
     abstract fun skills(): SkillDao
     abstract fun memories(): MemoryDao
+    abstract fun embeddings(): EmbeddingDao
 
     companion object {
         // Chats exist only on-device, so migrations must be explicit — a
@@ -246,9 +299,22 @@ abstract class ChatDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS embeddings (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, " +
+                        "ownerKey TEXT NOT NULL, conversationId TEXT, text TEXT NOT NULL, " +
+                        "at INTEGER NOT NULL, model TEXT NOT NULL, vector BLOB NOT NULL)",
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_embeddings_ownerKey ON embeddings (ownerKey)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_embeddings_conversationId ON embeddings (conversationId)")
+            }
+        }
+
         fun build(context: Context): ChatDatabase =
             Room.databaseBuilder(context.applicationContext, ChatDatabase::class.java, "conversations.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
     }
 }

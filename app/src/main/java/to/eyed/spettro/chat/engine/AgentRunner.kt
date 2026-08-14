@@ -57,6 +57,10 @@ class AgentRunner(
             Tools that touch personal data only work here if the user has already granted them
             standing approval; if such a tool returns a permission error, continue without that data
             and say what was unavailable.
+            search-history searches the user's past conversations and saved memories; use it when the
+            task refers to something they discussed before. run-javascript runs sandboxed JavaScript
+            for precise calculations and data transformation. create-file and generate-pdf save files
+            the user finds attached to the result; render-html produces an interactive view there.
             Your final message is delivered to the user as the task's result — make it a complete,
             self-contained answer.
         """.trimIndent()

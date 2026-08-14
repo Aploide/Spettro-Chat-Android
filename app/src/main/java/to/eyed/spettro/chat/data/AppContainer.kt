@@ -2,6 +2,7 @@ package to.eyed.spettro.chat.data
 
 import android.content.Context
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.filterNot
 import to.eyed.spettro.chat.data.api.SpettroApi
 import to.eyed.spettro.chat.data.api.SpettroWebApi
 import to.eyed.spettro.chat.data.mcp.McpRegistry
@@ -28,7 +29,17 @@ class AppContainer(context: Context) {
     val conversations = ConversationStore(context.applicationContext, db.conversations())
     val skills = SkillsRepository(db.skills())
     val memory = to.eyed.spettro.chat.data.memory.MemoryStore(db.memories())
-    val tools = ToolRegistry(context.applicationContext, prefs, memory)
+
+    /** On-device embeddings + the semantic index behind search-history. */
+    val embeddings = to.eyed.spettro.chat.data.recall.EmbeddingService(context.applicationContext)
+    val recall = to.eyed.spettro.chat.data.recall.RecallIndex(
+        db.embeddings(), embeddings, conversations, memory,
+    )
+
+    /** Files the assistant generates (create-file, generate-pdf, render-html). */
+    val artifacts = to.eyed.spettro.chat.data.artifacts.ArtifactStore(context.applicationContext)
+
+    val tools = ToolRegistry(context.applicationContext, prefs, memory, recall, artifacts)
 
     /** In-app approval for sensitive tools, and the runtime-permission relay. */
     val consent = ConsentGate(prefs)
@@ -69,6 +80,15 @@ class AppContainer(context: Context) {
 
     init {
         tools.appVisibleProvider = { engine.appVisible }
+        // Search skips the chat the question was asked in — it's in context.
+        recall.activeConversationProvider = { engine.activeId.value }
+        // Catch the index up at startup and again after every finished turn,
+        // so search-history rarely has embedding work left to do inline.
+        recall.scheduleCatchUp(delayMs = 8_000)
+        recall.bindTo(engine.events)
+        // When a model download finishes, hash-embedded vectors are rebuilt
+        // with it right away instead of waiting for the next turn.
+        recall.bindTo(embeddings.downloading.filterNot { it })
         taskManager.appVisibleProvider = { engine.appVisible }
         // Finished tasks write their result chat straight to the store; the
         // engine re-reads so it appears in the sidebar without a restart.

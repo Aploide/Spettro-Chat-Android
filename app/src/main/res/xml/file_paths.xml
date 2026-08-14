@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Camera captures land in cache/camera via FileProvider; nothing else is shared. -->
+<!-- Shared through FileProvider: camera captures (cache) and files the
+     assistant generates (create-file / generate-pdf / render-html). -->
 <paths>
     <cache-path name="camera" path="camera/" />
+    <files-path name="artifacts" path="artifacts/" />
 </paths>

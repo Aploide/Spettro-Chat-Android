@@ -39,6 +39,35 @@ system prompt. A fact saved mid-turn is therefore in context from the next messa
 Facts are injected most-recently-used first, under an 8 KB cap. When memory exceeds the cap,
 the stalest facts are the ones dropped.
 
+## Semantic recall
+
+The 8 KB injection above is what the model *always* sees. Everything else — the full text of
+past conversations, and memory facts that fell off the cap — is reachable on demand through
+the `search-history` tool, backed by an on-device embedding index (`data/recall/`).
+
+- **What is indexed.** Memory facts, and user/assistant messages of every saved chat, split
+  into ~700-character paragraph-aligned chunks. Temporary chats are never saved, so they are
+  never indexed. Chunks are content-addressed (the row key embeds a hash of the chunk), so
+  indexing is an incremental set difference: deleting a chat drops its rows, compaction
+  replaces them, unchanged chunks cost nothing. The index catches up in the background at
+  startup and after every finished turn, and always right before a search.
+- **Two embedders.** Out of the box, a dependency-free hashed-feature embedder (word
+  unigrams + character trigrams, 256 dims) gives lexical matching. Under **Settings →
+  Connectors → Semantic recall** the user can download MediaPipe's Universal Sentence
+  Encoder Lite (~6 MB, runs via TFLite); once present, all vectors are transparently rebuilt
+  with it and matching becomes genuinely semantic. Vectors are stamped with the embedder id,
+  so the two are never compared against each other. The MediaPipe runtime ships 16 KB
+  page-size-aligned native libs (verified on every version bump — a Play requirement); if
+  the runtime ever fails to load on a device, the app falls back to the hash embedder
+  automatically and the index self-heals to the working embedder on the next catch-up.
+- **Search** embeds the query, brute-forces cosine over the index (phone-scale corpora need
+  no ANN structure), adds a small keyword-overlap bonus, caps hits at two per conversation,
+  and excludes the active chat — its content is already in context. Hits return as snippets
+  with chat titles and dates.
+- **Privacy.** The index lives in the same Room database as the chats it is derived from,
+  and nothing about indexing or search leaves the device. It is derived data, so backups
+  skip it; it is rebuilt from the imported chats on the next catch-up.
+
 ## Your controls
 
 **Settings → Connectors → Memory** is the review surface. You can add, edit, and delete

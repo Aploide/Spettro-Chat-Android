@@ -166,6 +166,20 @@ class ChatEngine(
             preference about the user (name, language, tastes, ongoing projects) — one short line per fact.
             Use forget-memory when the user corrects or retracts something, or asks you to forget it.
             A Memory section appears below when anything is remembered; honor it without re-asking.
+            You can also recall the past: search-history searches the user's earlier conversations and
+            saved memories semantically, on this device. Use it when the user references something from
+            before ("that place we talked about", "my project", "what did I tell you about…"), or before
+            claiming you don't know something they may have told you in another chat.
+            You can compute: run-javascript executes JavaScript in a secure sandbox (no network, no device
+            access, 10s limit). Use it whenever precision matters — math, dates, statistics, parsing or
+            transforming data — instead of calculating in your head; console.log output and the final
+            value come back to you.
+            You can produce artifacts the user keeps: create-file saves any text-based file (CSV, JSON,
+            code, HTML…), generate-pdf lays out a real PDF document, and render-html displays an
+            interactive HTML view (charts drawn with inline JS/canvas/SVG, styled tables, small widgets)
+            inline in the chat — it must be fully self-contained, since network access is blocked there.
+            Reach for these when the user asks for a file or chart, or when a document or visual would
+            serve better than prose; never paste the generated content into your answer as well.
             The user can attach documents; each arrives inline in the message as an
             <attached-file name="..."> block holding the file's extracted text — treat it as the
             user's file and answer from its contents.

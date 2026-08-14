@@ -1,5 +1,5 @@
 [versions]
-agp = "9.1.1"
+agp = "9.3.1"
 coreKtx = "1.19.0"
 junit = "4.13.2"
 junitVersion = "1.3.0"
@@ -7,17 +7,21 @@ espressoCore = "3.7.0"
 lifecycle = "2.11.0"
 activityCompose = "1.13.0"
 kotlin = "2.4.10"
-composeBom = "2026.06.01"
-coroutines = "1.10.2"
-serializationJson = "1.9.0"
+composeBom = "2026.08.00"
+coroutines = "1.11.0"
+serializationJson = "1.11.0"
 okhttp = "5.4.0"
-datastore = "1.1.7"
-markdownRenderer = "0.38.0"
+datastore = "1.2.1"
+markdownRenderer = "0.43.0"
 clerk = "1.1.2"
 room = "2.8.4"
 ksp = "2.3.11"
 pdfbox = "2.0.27.0"
-work = "2.10.1"
+work = "2.11.2"
+rhino = "1.9.1"
+# 0.10.26+ ships 16 KB page-size-aligned native libs (verified with readelf
+# on every bump — this is a Play requirement, do not downgrade past it).
+mediapipeTasksText = "1.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -50,6 +54,8 @@ markdown-renderer-m3 = { group = "com.mikepenz", name = "multiplatform-markdown-
 icons-lucide = { group = "com.composables", name = "icons-lucide", version = "1.1.0" }
 clerk-android-api = { group = "com.clerk", name = "clerk-android-api", version.ref = "clerk" }
 pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfbox" }
+rhino = { group = "org.mozilla", name = "rhino", version.ref = "rhino" }
+mediapipe-tasks-text = { group = "com.google.mediapipe", name = "tasks-text", version.ref = "mediapipeTasksText" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

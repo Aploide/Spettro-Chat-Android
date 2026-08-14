@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -496,6 +497,25 @@ fun ChatRoot(
         val notificationAccess = remember {
             to.eyed.spettro.chat.data.tools.SpettroNotificationListener.isEnabled(context)
         }
+        // Semantic recall + generated files come straight from the container:
+        // one-shot reads on open, refreshed when the download state flips.
+        val container = remember(context) { to.eyed.spettro.chat.data.AppContainer.get(context) }
+        val recallDownloading by container.embeddings.downloading.collectAsState()
+        val recallError by container.embeddings.downloadError.collectAsState()
+        LaunchedEffect(recallDownloading, recallError) {
+            if (!recallDownloading && recallError != null) {
+                android.widget.Toast.makeText(
+                    context, "Model download failed: $recallError", android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+        val recallModelDownloaded = remember(recallDownloading) { container.embeddings.modelDownloaded() }
+        val recallIndexedCount by produceState(initialValue = 0, recallDownloading) {
+            value = runCatching { container.recall.indexedCount() }.getOrDefault(0)
+        }
+        var artifactStats by remember {
+            mutableStateOf(container.artifacts.count() to container.artifacts.totalBytes())
+        }
         SettingsSheet(
             account = account,
             email = email,
@@ -511,6 +531,16 @@ fun ChatRoot(
             onOpenSkills = { showSkillsSheet = true },
             memoryCount = chatVm.memories.collectAsState(initial = emptyList()).value.size,
             onOpenMemory = { showMemorySheet = true },
+            recallModelDownloaded = recallModelDownloaded,
+            recallDownloading = recallDownloading,
+            recallIndexedCount = recallIndexedCount,
+            onDownloadRecallModel = { container.embeddings.startDownload() },
+            artifactCount = artifactStats.first,
+            artifactBytes = artifactStats.second,
+            onClearArtifacts = {
+                container.artifacts.clear()
+                artifactStats = 0 to 0L
+            },
             scheduledTaskCount = chatVm.scheduledTasks.collectAsState().value.size,
             onOpenScheduledTasks = { showScheduledTasks = true },
             notificationAccessEnabled = notificationAccess,

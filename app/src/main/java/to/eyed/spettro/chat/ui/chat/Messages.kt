@@ -248,6 +248,11 @@ private fun AssistantMessage(
             Spacer(Modifier.height(10.dp))
         }
         MarkdownBody(text)
+        // Generated artifacts (inline HTML views, file chips) ride on the
+        // tool records, so they persist and re-render with the message.
+        if (tools.isNotEmpty()) {
+            ArtifactStrip(tools)
+        }
         if (streaming && text.isNotBlank()) {
             Spacer(Modifier.height(4.dp))
             BlinkingCaret(animations)

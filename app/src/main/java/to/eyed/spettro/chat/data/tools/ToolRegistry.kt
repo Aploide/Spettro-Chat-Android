@@ -35,6 +35,8 @@ class ToolRegistry(
     context: Context,
     prefs: AppPrefs,
     private val memory: to.eyed.spettro.chat.data.memory.MemoryStore,
+    private val recall: to.eyed.spettro.chat.data.recall.RecallIndex,
+    artifacts: to.eyed.spettro.chat.data.artifacts.ArtifactStore,
 ) {
     private val web = WebTools()
     private val device = DeviceTools(context)
@@ -45,6 +47,8 @@ class ToolRegistry(
     private val actuators = ActuatorTools(context)
     private val scheduled = ScheduledTaskTools(context, prefs)
     private val notifications = NotificationTools(context)
+    private val js = JsTools { name, content -> artifacts.createText(name, content) }
+    private val artifactTools = ArtifactTools(artifacts)
 
     /**
      * Whether any activity is on screen right now; wired to the engine by
@@ -79,6 +83,11 @@ class ToolRegistry(
         const val OPEN_ON_PHONE = "open-on-phone"
         const val MEDIA_CONTROL = "media-control"
         const val READ_NOTIFICATIONS = "read-notifications"
+        const val SEARCH_HISTORY = "search-history"
+        const val RUN_JAVASCRIPT = "run-javascript"
+        const val CREATE_FILE = "create-file"
+        const val GENERATE_PDF = "generate-pdf"
+        const val RENDER_HTML = "render-html"
 
         /**
          * Tools that only make sense with a user present; the headless
@@ -92,7 +101,7 @@ class ToolRegistry(
          * card, no UI, no ordering dependency between calls. Web calls are
          * the latency win this exists for.
          */
-        val PARALLEL_SAFE = setOf(WEB_SEARCH, WEB_FETCH, CURRENT_TIME, DEVICE_INFO)
+        val PARALLEL_SAFE = setOf(WEB_SEARCH, WEB_FETCH, CURRENT_TIME, DEVICE_INFO, SEARCH_HISTORY)
     }
 
     /** Whether calls to this tool may run concurrently with its round's other calls. */
@@ -200,6 +209,54 @@ class ToolRegistry(
                 "the user for approval before each first use.",
             parametersJson = """{"type":"object","properties":{"max_results":{"type":"integer","description":"Maximum notifications to return (default 25, max 50)."}},"required":[]}""",
         ),
+        ToolSpec(
+            name = SEARCH_HISTORY,
+            description = "Search the user's past conversations and saved memories semantically, on-device. " +
+                "Use it when the user references something from before (\"that restaurant we talked about\", " +
+                "\"my project\", \"what did I say about…\"), when an earlier chat likely holds the answer, or " +
+                "before saying you don't know something the user may have told you. Returns matching snippets " +
+                "with chat titles and dates. The current conversation is not searched — it is already in context.",
+            parametersJson = """{"type":"object","properties":{"query":{"type":"string","description":"What to look for, as a natural-language phrase."},"scope":{"type":"string","enum":["all","chats","memories"],"description":"Where to search (default all)."},"max_results":{"type":"integer","description":"Maximum matches to return (default 8, max 20)."}},"required":["query"]}""",
+        ),
+        ToolSpec(
+            name = RUN_JAVASCRIPT,
+            description = "Execute JavaScript in a secure sandbox on the phone and return the result. " +
+                "Use it for anything computational: math, dates, unit conversions, statistics, parsing and " +
+                "transforming data (JSON/CSV/text), simulations, or generating file content. The sandbox is " +
+                "pure computation: ES6 with the standard built-ins (Math, JSON, RegExp, Date, Map/Set, " +
+                "arrow functions, template literals — but no spread syntax and no async/await; use " +
+                "Array.from and Object.assign instead), console.log captured, no network, no device " +
+                "access, 10-second limit. The value of the last expression is returned. " +
+                "saveFile(name, content) saves a text file the user can open and share. " +
+                "Prefer this over doing arithmetic in your head whenever precision matters.",
+            parametersJson = """{"type":"object","properties":{"code":{"type":"string","description":"The JavaScript to run. The last expression's value is the result; use console.log for intermediate output."}},"required":["code"]}""",
+        ),
+        ToolSpec(
+            name = CREATE_FILE,
+            description = "Create a file the user can open, save, and share: CSV, JSON, Markdown, HTML, code, " +
+                "or any text-based format (or small binary content via base64). The file appears attached to " +
+                "your message. Use it whenever the user asks for something as a file, or when content is more " +
+                "useful as a document than pasted in chat. For PDFs use generate-pdf instead.",
+            parametersJson = """{"type":"object","properties":{"filename":{"type":"string","description":"File name with extension, e.g. report.csv"},"content":{"type":"string","description":"The file's full content."},"base64":{"type":"boolean","description":"Set true when content is base64-encoded binary data."}},"required":["filename","content"]}""",
+        ),
+        ToolSpec(
+            name = GENERATE_PDF,
+            description = "Generate a real, paginated PDF document from text and attach it to your message. " +
+                "Supports light markdown structure: # / ## / ### headings, - bullets, numbered lists, " +
+                "``` code blocks, and --- rules. Use it for reports, summaries, letters, itineraries — " +
+                "anything the user wants as a document they can keep or share.",
+            parametersJson = """{"type":"object","properties":{"title":{"type":"string","description":"Document title, drawn at the top."},"content":{"type":"string","description":"The document body (markdown-lite)."},"filename":{"type":"string","description":"Optional file name (default derived from the title)."}},"required":["content"]}""",
+        ),
+        ToolSpec(
+            name = RENDER_HTML,
+            description = "Render an interactive HTML view inline in the chat: charts (draw with inline " +
+                "JavaScript/canvas/SVG), styled tables, diagrams, small interactive widgets. The page runs in a " +
+                "sandboxed WebView: JavaScript works, but network access is blocked, so everything must be " +
+                "self-contained — inline all CSS/JS/data, no external scripts, fonts, or images. Pass either a " +
+                "complete HTML document or a fragment (fragments get a dark-themed shell). Keep it small and " +
+                "focused; the user can expand it fullscreen and share it.",
+            parametersJson = """{"type":"object","properties":{"title":{"type":"string","description":"Short name for the view, shown on its card."},"html":{"type":"string","description":"Self-contained HTML (document or fragment). No external resources."}},"required":["html"]}""",
+        ),
         // Descriptions modeled on the CLI's save-memory (llm_runtime_prompt.go).
         ToolSpec(
             name = SAVE_MEMORY,
@@ -276,6 +333,14 @@ class ToolRegistry(
         OPEN_ON_PHONE -> ToolArgs.string(argumentsJson, "app")?.let { "Opening ${it.take(40)}…" } ?: "Opening a link…"
         MEDIA_CONTROL -> "Controlling media playback…"
         READ_NOTIFICATIONS -> "Reading your notifications…"
+        SEARCH_HISTORY -> quotedArg(argumentsJson, "query")
+            ?.let { "Searching your history for $it…" } ?: "Searching your history…"
+        RUN_JAVASCRIPT -> "Running code…"
+        CREATE_FILE -> ToolArgs.string(argumentsJson, "filename")
+            ?.let { "Creating ${it.take(40)}…" } ?: "Creating a file…"
+        GENERATE_PDF -> "Generating a PDF…"
+        RENDER_HTML -> ToolArgs.string(argumentsJson, "title")
+            ?.let { "Rendering ${it.take(40)}…" } ?: "Rendering a view…"
         ASK_USER -> "Waiting for your answer…"
         COMMENT -> commentMessage(argumentsJson) ?: "…"
         else -> "Running $name…"
@@ -309,6 +374,14 @@ class ToolRegistry(
         OPEN_ON_PHONE -> ToolArgs.string(argumentsJson, "app")?.let { "Opened ${it.take(40)}" } ?: "Opened a link"
         MEDIA_CONTROL -> "Sent a media command"
         READ_NOTIFICATIONS -> "Read your notifications"
+        SEARCH_HISTORY -> quotedArg(argumentsJson, "query")
+            ?.let { "Searched your history for $it" } ?: "Searched your history"
+        RUN_JAVASCRIPT -> "Ran code"
+        CREATE_FILE -> ToolArgs.string(argumentsJson, "filename")
+            ?.let { "Created ${it.take(40)}" } ?: "Created a file"
+        GENERATE_PDF -> "Generated a PDF"
+        RENDER_HTML -> ToolArgs.string(argumentsJson, "title")
+            ?.let { "Rendered ${it.take(40)}" } ?: "Rendered a view"
         ASK_USER -> "Asked for your input"
         // A comment's whole point is its text; the label is the message.
         COMMENT -> commentMessage(argumentsJson) ?: "…"
@@ -335,6 +408,11 @@ class ToolRegistry(
                 OPEN_ON_PHONE -> actuators.openOnPhone(call.arguments, appVisibleProvider())
                 MEDIA_CONTROL -> actuators.mediaControl(call.arguments)
                 READ_NOTIFICATIONS -> notifications.read(call.arguments)
+                SEARCH_HISTORY -> searchHistory(call.arguments)
+                RUN_JAVASCRIPT -> js.run(call.arguments)
+                CREATE_FILE -> artifactTools.createFile(call.arguments)
+                GENERATE_PDF -> artifactTools.generatePdf(call.arguments)
+                RENDER_HTML -> artifactTools.renderHtml(call.arguments)
                 // The CLI echoes the message back verbatim as the result.
                 COMMENT -> ToolResult(ToolArgs.string(call.arguments, "message") ?: "")
                 // ask-user blocks on the person; the ViewModel intercepts it
@@ -440,6 +518,15 @@ class ToolRegistry(
             rationale = "",
         )
         else -> null
+    }
+
+    private suspend fun searchHistory(argumentsJson: String): ToolResult {
+        val query = ToolArgs.string(argumentsJson, "query")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return ToolResult("search-history requires a query", isError = true)
+        val scope = ToolArgs.string(argumentsJson, "scope") ?: "all"
+        val max = (ToolArgs.int(argumentsJson, "max_results") ?: 8).coerceIn(1, 20)
+        val hits = recall.search(query, scope, max)
+        return ToolResult(recall.format(query, hits))
     }
 
     private suspend fun spawnTask(argumentsJson: String): ToolResult {

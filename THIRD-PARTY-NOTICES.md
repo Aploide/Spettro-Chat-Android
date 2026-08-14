@@ -34,6 +34,21 @@ resolved set for a given build is available from `./gradlew :app:dependencies`.
 | JSpecify | The JSpecify Authors |
 | [multiplatform-markdown-renderer](https://github.com/mikepenz/multiplatform-markdown-renderer) | Mike Penz |
 | [PdfBox-Android](https://github.com/TomRoush/PdfBox-Android) (`com.tom-roush:pdfbox-android`), a port of Apache PDFBox | Tom Roush; The Apache Software Foundation |
+| [MediaPipe Tasks](https://github.com/google-ai-edge/mediapipe) (`com.google.mediapipe:tasks-text`), including its bundled TensorFlow Lite runtime and protobuf | Google LLC |
+
+The Universal Sentence Encoder model file that `tasks-text` runs is **not** bundled; it is
+downloaded on demand from Google's model hosting (Apache License 2.0, © Google LLC) only
+when the user enables enhanced semantic recall in Settings.
+
+## Mozilla Public License 2.0
+
+> This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+> If a copy of the MPL was not distributed with this file, You can obtain one at
+> <https://mozilla.org/MPL/2.0/>.
+
+| Component | Copyright |
+|---|---|
+| [Rhino](https://github.com/mozilla/rhino) (`org.mozilla:rhino`), the JavaScript engine behind the run-javascript sandbox | Mozilla and individual contributors |
 
 ## MIT License
 
