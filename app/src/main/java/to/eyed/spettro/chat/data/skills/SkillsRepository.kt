@@ -29,6 +29,7 @@ data class Skill(
 class SkillsRepository(private val dao: SkillDao) {
     companion object {
         const val LOAD_SKILL = "load-skill"
+        const val CREATE_SKILL = "create-skill"
         const val MAX_INSTRUCTIONS_CHARS = 8_000
     }
 
@@ -103,6 +104,45 @@ class SkillsRepository(private val dao: SkillDao) {
                 "then follow the returned instructions for the rest of the conversation.\n" +
                 "Available skills:\n$catalog",
             parametersJson = """{"type":"object","properties":{"name":{"type":"string","description":"The skill's slug from the list."}},"required":["name"]}""",
+        )
+    }
+
+    // --- create-skill tool (the model saves a new skill for the user) ---
+
+    /** The create-skill spec; static, offered alongside load-skill. */
+    fun createSkillSpec(): to.eyed.spettro.chat.data.api.ToolSpec =
+        to.eyed.spettro.chat.data.api.ToolSpec(
+            name = CREATE_SKILL,
+            description = "Save a new skill: a reusable set of instructions the user can apply to any " +
+                "chat via its /slug, and that you can load mid-run with load-skill. Only call it after " +
+                "the user has confirmed the skill's content. Write the instructions as directives " +
+                "(\"You are acting as…\"), stating the role, procedure, output format, and edge cases.",
+            parametersJson = """{"type":"object","properties":{"name":{"type":"string","description":"Display name, e.g. \"Recipe scaler\"."},"slug":{"type":"string","description":"The /slug trigger: lowercase letters, digits, and hyphens; must be unique."},"description":{"type":"string","description":"One line saying what the skill does; used to decide when to load it."},"emoji":{"type":"string","description":"A single emoji shown next to the skill."},"instructions":{"type":"string","description":"The full instructions applied to the chat when the skill is active (max $MAX_INSTRUCTIONS_CHARS characters)."}},"required":["name","slug","description","instructions"]}""",
+        )
+
+    suspend fun executeCreate(argumentsJson: String): ToolResult {
+        val name = ToolArgs.string(argumentsJson, "name")
+            ?: return ToolResult("create-skill requires a name", isError = true)
+        val slug = ToolArgs.string(argumentsJson, "slug")
+            ?: return ToolResult("create-skill requires a slug", isError = true)
+        val instructions = ToolArgs.string(argumentsJson, "instructions")
+            ?: return ToolResult("create-skill requires instructions", isError = true)
+        val skill = Skill(
+            id = newId(),
+            name = name,
+            slug = slug,
+            description = ToolArgs.string(argumentsJson, "description") ?: "",
+            instructions = instructions,
+            emoji = ToolArgs.string(argumentsJson, "emoji") ?: "✨",
+        )
+        return save(skill).fold(
+            onSuccess = {
+                ToolResult(
+                    "saved. The user can now start any chat with /${it.slug} or pick " +
+                        "\"${it.name}\" from the skill list, and edit it under Settings → Skills.",
+                )
+            },
+            onFailure = { ToolResult("create-skill: ${it.message}", isError = true) },
         )
     }
 

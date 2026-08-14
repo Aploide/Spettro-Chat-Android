@@ -27,6 +27,7 @@ import to.eyed.spettro.chat.data.tools.AskAnswer
 import to.eyed.spettro.chat.data.tools.AskForm
 import to.eyed.spettro.chat.data.tools.AskParseResult
 import to.eyed.spettro.chat.data.tools.AskUserForms
+import to.eyed.spettro.chat.data.skills.SkillsRepository.Companion.CREATE_SKILL
 import to.eyed.spettro.chat.data.skills.SkillsRepository.Companion.LOAD_SKILL
 import to.eyed.spettro.chat.data.tools.ToolRegistry
 import to.eyed.spettro.chat.data.tools.ToolResult
@@ -118,6 +119,14 @@ class ChatEngine(
     val activeConversation: Conversation?
         get() = _tempChat.value?.takeIf { it.id == _activeId.value }
             ?: _conversations.value.firstOrNull { it.id == _activeId.value }
+
+    /**
+     * The chat's title as of right now — not the copy captured when the turn
+     * started, which predates the generated title.
+     */
+    private fun currentTitle(id: String): String =
+        (_tempChat.value?.takeIf { it.id == id } ?: _conversations.value.firstOrNull { it.id == id })
+            ?.displayTitle ?: "New Chat"
 
     init {
         scope.launch { _conversations.value = store.loadAll() }
@@ -303,6 +312,7 @@ class ChatEngine(
         val now = System.currentTimeMillis()
         val userMsg = StoredMessage("user", trimmed, at = now, images = images)
         val titleSeed = trimmed.ifBlank { "Image" }
+        val isFirstMessage = activeConversation?.messages?.isEmpty() != false
         val conv = activeConversation?.let {
             it.copy(messages = it.messages + userMsg, updatedAt = now)
         } ?: Conversation(
@@ -318,6 +328,42 @@ class ChatEngine(
         _activeId.value = conv.id
         upsert(conv)
         startStream(conv, model, thinking)
+        // Every chat gets a proper name as soon as it starts, so the sidebar
+        // and the finished-run notification can say what it was about.
+        // Temporary chats stay nameless on purpose.
+        if (isFirstMessage && conv.id != TEMP_ID) generateTitle(conv.id, titleSeed, model)
+    }
+
+    /**
+     * Asks the model for a short chat title in the background, alongside the
+     * main turn. Best-effort: any failure just leaves the first-message seed.
+     */
+    private fun generateTitle(conversationId: String, firstMessage: String, model: ModelInfo) {
+        scope.launch {
+            runCatching {
+                val request = listOf(
+                    OutgoingMessage(
+                        role = "system",
+                        text = "You title chat conversations. Reply with only a title for the " +
+                            "conversation that starts with the user message: at most 5 words, in the " +
+                            "message's language, no quotes, no trailing punctuation.",
+                    ),
+                    OutgoingMessage(role = "user", text = firstMessage.take(2_000)),
+                )
+                val acc = StringBuilder()
+                api.chatStream(model.id, request).collect { event ->
+                    if (event is ChatEvent.Text) acc.append(event.delta)
+                }
+                val title = acc.toString()
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+                    .trim('"', '“', '”', '\'', '*', '#', ' ')
+                    .take(64)
+                if (title.isNotBlank()) {
+                    update(conversationId) { it.copy(title = title) }
+                }
+            }
+        }
     }
 
     /**
@@ -369,7 +415,7 @@ class ChatEngine(
                         else -> Unit
                     }
                 }
-                _events.tryEmit(EngineEvent.RunFinished(conv.id, conv.displayTitle, failed = false))
+                _events.tryEmit(EngineEvent.RunFinished(conv.id, currentTitle(conv.id), failed = false))
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: UnauthorizedException) {
@@ -432,6 +478,7 @@ class ChatEngine(
             }
             // Rebuilt per run so the catalog in its description stays current.
             val loadSkillSpec = runCatching { skills.loadSkillSpec() }.getOrNull()
+            val createSkillSpec = runCatching { skills.createSkillSpec() }.getOrNull()
 
             val textAcc = StringBuilder()
             val reasoningAcc = StringBuilder()
@@ -460,7 +507,7 @@ class ChatEngine(
                     // MCP specs come from a lazy, per-server-guarded listing —
                     // a dead server contributes nothing and never blocks.
                     val offer = if (round < MAX_TOOL_ROUNDS) {
-                        tools.specs + listOfNotNull(loadSkillSpec) + mcp.activeSpecs()
+                        tools.specs + listOfNotNull(loadSkillSpec, createSkillSpec) + mcp.activeSpecs()
                     } else {
                         emptyList()
                     }
@@ -513,6 +560,7 @@ class ChatEngine(
                         val (result, doneLabel) = when {
                             call.name == ToolRegistry.ASK_USER -> executeAskUser(call)
                             call.name == LOAD_SKILL -> executeLoadSkill(call)
+                            call.name == CREATE_SKILL -> executeCreateSkill(call)
                             mcp.isMcpTool(call.name) -> executeMcp(call)
                             meta != null -> executeGated(meta, call)
                             else -> tools.execute(call) to tools.doneLabel(call.name, call.arguments)
@@ -530,7 +578,7 @@ class ChatEngine(
                 }
                 appendAssistant(textAcc.toString(), reasoningAcc.toString(), toolRuns.toStored())
                 _stream.value = StreamState.Idle
-                _events.tryEmit(EngineEvent.RunFinished(conv.id, conv.displayTitle, failed = false))
+                _events.tryEmit(EngineEvent.RunFinished(conv.id, currentTitle(conv.id), failed = false))
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // A stopped turn is not an error; stopStreaming already kept
                 // the partial answer.
@@ -543,7 +591,7 @@ class ChatEngine(
                     appendAssistant(textAcc.toString(), reasoningAcc.toString(), toolRuns.toStored())
                 }
                 _stream.value = StreamState.Error(friendlyError(e))
-                _events.tryEmit(EngineEvent.RunFinished(conv.id, conv.displayTitle, failed = true))
+                _events.tryEmit(EngineEvent.RunFinished(conv.id, currentTitle(conv.id), failed = true))
             } finally {
                 _isRunning.value = false
             }
@@ -582,6 +630,7 @@ class ChatEngine(
 
     private fun runningLabel(name: String, argumentsJson: String): String = when {
         name == LOAD_SKILL -> "Loading a skill…"
+        name == CREATE_SKILL -> "Creating a skill…"
         mcp.isMcpTool(name) -> mcp.runningLabel(name)
         else -> tools.runningLabel(name, argumentsJson)
     }
@@ -590,6 +639,16 @@ class ChatEngine(
         val result = skills.executeLoad(call.arguments)
         val slug = to.eyed.spettro.chat.data.tools.ToolArgs.string(call.arguments, "name")
         return result to if (result.isError) "Skill not found" else "Loaded the ${slug ?: ""} skill".trim()
+    }
+
+    private suspend fun executeCreateSkill(call: ToolCallData): Pair<ToolResult, String> {
+        val result = skills.executeCreate(call.arguments)
+        val name = to.eyed.spettro.chat.data.tools.ToolArgs.string(call.arguments, "name")
+        return result to when {
+            result.isError -> "Couldn't create the skill"
+            name != null -> "Created the “$name” skill"
+            else -> "Created a skill"
+        }
     }
 
     /**
