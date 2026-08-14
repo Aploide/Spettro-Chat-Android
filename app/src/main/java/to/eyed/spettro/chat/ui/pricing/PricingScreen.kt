@@ -133,7 +133,9 @@ fun PricingScreen(
 @Composable
 private fun TierCard(tier: Tier, yearly: Boolean, isCurrent: Boolean, onUpgrade: () -> Unit) {
     val shape = RoundedCornerShape(Radii.card)
-    Box(Modifier.fillMaxWidth().widthIn(max = 448.dp)) {
+    // widthIn must come before fillMaxWidth: the cap bounds the incoming
+    // constraints, then fill stretches only up to that cap.
+    Box(Modifier.widthIn(max = 448.dp).fillMaxWidth()) {
         Column(
             Modifier
                 .fillMaxWidth()
