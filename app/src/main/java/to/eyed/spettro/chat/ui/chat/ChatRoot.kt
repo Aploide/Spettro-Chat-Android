@@ -103,6 +103,7 @@ fun ChatRoot(
     var showMcpSheet by remember { mutableStateOf(false) }
     var showSkillsSheet by remember { mutableStateOf(false) }
     var showSkillPicker by remember { mutableStateOf(false) }
+    var showMemorySheet by remember { mutableStateOf(false) }
 
     // Skills: the active one comes from the conversation (or, before the
     // first message, from the engine's pending pick).
@@ -406,6 +407,8 @@ fun ChatRoot(
             onOpenMcpServers = { showMcpSheet = true },
             skillCount = allSkills.size,
             onOpenSkills = { showSkillsSheet = true },
+            memoryCount = chatVm.memories.collectAsState(initial = emptyList()).value.size,
+            onOpenMemory = { showMemorySheet = true },
             onSetStreamingAnimations = appVm::setStreamingAnimations,
             onSetHapticFeedback = appVm::setHapticFeedback,
             // Pricing and billing live on spettro.app; hand off to the browser.
@@ -413,7 +416,7 @@ fun ChatRoot(
             onExportChats = {
                 val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
                     .format(java.util.Date())
-                exportChatsLauncher.launch("spettro-chats-$date.json")
+                exportChatsLauncher.launch("spettro-backup-$date.json")
             },
             onImportChats = {
                 importChatsLauncher.launch(
@@ -426,6 +429,18 @@ fun ChatRoot(
                 appVm.signOut()
             },
             onDismiss = { showSettings = false },
+        )
+    }
+
+    if (showMemorySheet) {
+        val memories by chatVm.memories.collectAsState(initial = emptyList())
+        to.eyed.spettro.chat.ui.settings.MemorySheet(
+            memories = memories,
+            onAdd = chatVm::addMemory,
+            onUpdate = chatVm::updateMemory,
+            onDelete = chatVm::deleteMemory,
+            onClearAll = chatVm::clearMemories,
+            onDismiss = { showMemorySheet = false },
         )
     }
 

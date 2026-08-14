@@ -118,9 +118,10 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     fun exportChats(uri: Uri) {
         viewModelScope.launch {
             _dataNotice.value = try {
-                val count = store.exportTo(uri)
-                if (count == 0) "No chats to export yet."
-                else "Exported $count ${if (count == 1) "chat" else "chats"}."
+                val counts = container.backup.exportTo(uri)
+                "Exported ${counts.chats} ${if (counts.chats == 1) "chat" else "chats"}, " +
+                    "${counts.skills} skills, ${counts.memories} memories, " +
+                    "${counts.mcpServers} MCP servers, and your settings."
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -132,22 +133,45 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     fun importChats(uri: Uri) {
         viewModelScope.launch {
             _dataNotice.value = try {
-                val result = store.importFrom(uri)
+                val counts = container.backup.importFrom(uri)
                 engine.refreshConversations()
-                when {
-                    result.imported == 0 && result.skipped == 0 -> "The file contains no chats."
-                    result.imported == 0 -> "Nothing to import — every chat in the file is already here."
-                    else -> "Imported ${result.imported} ${if (result.imported == 1) "chat" else "chats"}" +
-                        (if (result.skipped > 0) " (${result.skipped} already up to date)." else ".")
+                val parts = buildList {
+                    if (counts.chats > 0) {
+                        add(
+                            "${counts.chats} ${if (counts.chats == 1) "chat" else "chats"}" +
+                                (if (counts.chatsSkipped > 0) " (${counts.chatsSkipped} already up to date)" else ""),
+                        )
+                    }
+                    if (counts.skills > 0) add("${counts.skills} skills")
+                    if (counts.memories > 0) add("${counts.memories} memories")
+                    if (counts.mcpServers > 0) add("${counts.mcpServers} MCP servers")
+                    if (counts.settingsApplied) add("settings")
                 }
+                if (parts.isEmpty()) "Nothing new to import — everything in the file is already here."
+                else "Imported ${parts.joinToString(", ")}."
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: kotlinx.serialization.SerializationException) {
-                "Import failed: this file is not a Spettro chat export."
+                "Import failed: this file is not a Spettro backup."
             } catch (e: Exception) {
                 "Import failed: ${e.message?.take(120) ?: "could not read the file"}"
             }
         }
+    }
+
+    // Memory: remembered facts, editable by the user in Settings.
+    val memories get() = container.memory.all
+    fun addMemory(text: String) {
+        viewModelScope.launch { container.memory.save(text) }
+    }
+    fun updateMemory(id: String, text: String) {
+        viewModelScope.launch { container.memory.update(id, text) }
+    }
+    fun deleteMemory(id: String) {
+        viewModelScope.launch { container.memory.delete(id) }
+    }
+    fun clearMemories() {
+        viewModelScope.launch { container.memory.deleteAll() }
     }
 
     class Factory(private val container: AppContainer) : ViewModelProvider.Factory {

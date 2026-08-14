@@ -31,7 +31,11 @@ data class SensitiveMeta(
  * implementations live in [WebTools], [DeviceTools], [CalendarTools],
  * [ContactsTools], [ReminderTools], [LocationTools], and AskUser.kt.
  */
-class ToolRegistry(context: Context, prefs: AppPrefs) {
+class ToolRegistry(
+    context: Context,
+    prefs: AppPrefs,
+    private val memory: to.eyed.spettro.chat.data.memory.MemoryStore,
+) {
     private val web = WebTools()
     private val device = DeviceTools(context)
     private val calendar = CalendarTools(context)
@@ -57,6 +61,8 @@ class ToolRegistry(context: Context, prefs: AppPrefs) {
         const val CONTACTS_SEARCH = "contacts-search"
         const val SET_REMINDER = "set-reminder"
         const val GET_LOCATION = "get-location"
+        const val SAVE_MEMORY = "save-memory"
+        const val FORGET_MEMORY = "forget-memory"
     }
 
     val specs: List<ToolSpec> = listOf(
@@ -108,6 +114,22 @@ class ToolRegistry(context: Context, prefs: AppPrefs) {
                 "screen. The app asks the user for approval before any location access.",
             parametersJson = """{"type":"object","properties":{},"required":[]}""",
         ),
+        // Descriptions modeled on the CLI's save-memory (llm_runtime_prompt.go).
+        ToolSpec(
+            name = SAVE_MEMORY,
+            description = "Save one short durable fact or preference about the user to persistent memory; " +
+                "it is loaded into context in future chats. Save things worth remembering across " +
+                "conversations (name, language, preferences, ongoing projects), never transient details " +
+                "of the current task. Keep each fact a single short line.",
+            parametersJson = """{"type":"object","properties":{"fact":{"type":"string","description":"The fact, as one short self-contained line."}},"required":["fact"]}""",
+        ),
+        ToolSpec(
+            name = FORGET_MEMORY,
+            description = "Remove a fact from persistent memory when the user corrects it, retracts it, or " +
+                "asks you to forget something. Pass the fact (or a distinctive part of it); every matching " +
+                "memory is removed.",
+            parametersJson = """{"type":"object","properties":{"fact":{"type":"string","description":"The remembered fact to remove, or a distinctive fragment of it."}},"required":["fact"]}""",
+        ),
         ToolSpec(
             name = COMMENT,
             description = "Emit a progress message visible to the user. " +
@@ -150,6 +172,8 @@ class ToolRegistry(context: Context, prefs: AppPrefs) {
             ?.let { "Searching contacts for $it…" } ?: "Searching your contacts…"
         SET_REMINDER -> "Setting a reminder…"
         GET_LOCATION -> "Reading your location…"
+        SAVE_MEMORY -> "Saving a memory…"
+        FORGET_MEMORY -> "Forgetting a memory…"
         ASK_USER -> "Waiting for your answer…"
         COMMENT -> commentMessage(argumentsJson) ?: "…"
         else -> "Running $name…"
@@ -169,6 +193,8 @@ class ToolRegistry(context: Context, prefs: AppPrefs) {
             ?.let { "Searched contacts for $it" } ?: "Searched your contacts"
         SET_REMINDER -> "Set a reminder"
         GET_LOCATION -> "Read your location"
+        SAVE_MEMORY -> quotedArg(argumentsJson, "fact")?.let { "Remembered $it" } ?: "Saved a memory"
+        FORGET_MEMORY -> quotedArg(argumentsJson, "fact")?.let { "Forgot $it" } ?: "Forgot a memory"
         ASK_USER -> "Asked for your input"
         // A comment's whole point is its text; the label is the message.
         COMMENT -> commentMessage(argumentsJson) ?: "…"
@@ -186,6 +212,8 @@ class ToolRegistry(context: Context, prefs: AppPrefs) {
                 CONTACTS_SEARCH -> contacts.search(call.arguments)
                 SET_REMINDER -> reminders.set(call.arguments)
                 GET_LOCATION -> location.current(appVisibleProvider())
+                SAVE_MEMORY -> saveMemory(call.arguments)
+                FORGET_MEMORY -> forgetMemory(call.arguments)
                 // The CLI echoes the message back verbatim as the result.
                 COMMENT -> ToolResult(ToolArgs.string(call.arguments, "message") ?: "")
                 // ask-user blocks on the person; the ViewModel intercepts it
@@ -243,6 +271,35 @@ class ToolRegistry(context: Context, prefs: AppPrefs) {
             rationale = "Reading your location needs the Android location permission.",
         )
         else -> null
+    }
+
+    // Result wording follows the CLI's runSaveMemory, adapted to per-message
+    // (not per-session) prompt assembly.
+    private suspend fun saveMemory(argumentsJson: String): ToolResult {
+        val fact = ToolArgs.string(argumentsJson, "fact")
+            ?: return ToolResult("save-memory requires a fact", isError = true)
+        return when (val outcome = memory.save(fact)) {
+            is to.eyed.spettro.chat.data.memory.MemorySaveOutcome.New ->
+                ToolResult("saved to memory; it will be in context from the next message on")
+            is to.eyed.spettro.chat.data.memory.MemorySaveOutcome.Duplicate ->
+                ToolResult("already in memory (\"${outcome.existing}\") — refreshed its last-used date instead of duplicating it")
+            is to.eyed.spettro.chat.data.memory.MemorySaveOutcome.Superseded ->
+                ToolResult("saved, replacing the similar older memory \"${outcome.old}\"")
+            is to.eyed.spettro.chat.data.memory.MemorySaveOutcome.Invalid ->
+                ToolResult("save-memory: ${outcome.reason}", isError = true)
+        }
+    }
+
+    private suspend fun forgetMemory(argumentsJson: String): ToolResult {
+        val fact = ToolArgs.string(argumentsJson, "fact")
+            ?: return ToolResult("forget-memory requires the fact to remove", isError = true)
+        val removed = memory.forget(fact)
+        return if (removed.isEmpty()) {
+            ToolResult("no memory matches \"$fact\" — nothing was removed", isError = true)
+        } else {
+            ToolResult("forgot ${removed.size} ${if (removed.size == 1) "memory" else "memories"}:\n" +
+                removed.joinToString("\n") { "- $it" })
+        }
     }
 
     private fun commentMessage(argumentsJson: String): String? =

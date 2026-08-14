@@ -26,7 +26,8 @@ class AppContainer(context: Context) {
     private val db = ChatDatabase.build(context.applicationContext)
     val conversations = ConversationStore(context.applicationContext, db.conversations())
     val skills = SkillsRepository(db.skills())
-    val tools = ToolRegistry(context.applicationContext, prefs)
+    val memory = to.eyed.spettro.chat.data.memory.MemoryStore(db.memories())
+    val tools = ToolRegistry(context.applicationContext, prefs, memory)
 
     /** In-app approval for sensitive tools, and the runtime-permission relay. */
     val consent = ConsentGate(prefs)
@@ -38,9 +39,18 @@ class AppContainer(context: Context) {
     /** Emitted when any API call returns 401 — the session must be re-established. */
     val unauthorized = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
+    /** Emitted after a backup import rewrote settings, so UI state reloads them. */
+    val settingsChanged = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
     /** The app-scoped agent loop; built last so it can take everything above. */
     val engine = ChatEngine(
-        context.applicationContext, api, conversations, tools, mcp, skills, consent, permissions, unauthorized,
+        context.applicationContext, api, conversations, tools, mcp, skills, memory,
+        consent, permissions, unauthorized,
+    )
+
+    /** Whole-app export/import: chats, skills, memory, MCP servers, settings. */
+    val backup = to.eyed.spettro.chat.data.store.BackupManager(
+        context.applicationContext, conversations, skills, memory, mcp, prefs, settingsChanged,
     )
 
     init {

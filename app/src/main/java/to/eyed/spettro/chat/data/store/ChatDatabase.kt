@@ -151,6 +151,34 @@ interface ConversationDao {
     }
 }
 
+@Entity(tableName = "memories")
+data class MemoryEntity(
+    /** Stable hash of the normalized text, like the CLI's m-xxxxxx ids. */
+    @PrimaryKey val id: String,
+    val text: String,
+    val addedAt: Long,
+    /** Bumped when the same fact is saved again; drives injection order. */
+    val usedAt: Long,
+)
+
+@Dao
+interface MemoryDao {
+    @Query("SELECT * FROM memories ORDER BY usedAt DESC, addedAt DESC")
+    fun all(): kotlinx.coroutines.flow.Flow<List<MemoryEntity>>
+
+    @Query("SELECT * FROM memories ORDER BY usedAt DESC, addedAt DESC")
+    suspend fun allOnce(): List<MemoryEntity>
+
+    @Upsert
+    suspend fun upsert(memory: MemoryEntity)
+
+    @Query("DELETE FROM memories WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("DELETE FROM memories")
+    suspend fun deleteAll()
+}
+
 @Dao
 interface SkillDao {
     @Query("SELECT * FROM skills ORDER BY name COLLATE NOCASE")
@@ -173,13 +201,17 @@ interface SkillDao {
 }
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, MessageImageEntity::class, SkillEntity::class],
-    version = 2,
+    entities = [
+        ConversationEntity::class, MessageEntity::class, MessageImageEntity::class,
+        SkillEntity::class, MemoryEntity::class,
+    ],
+    version = 3,
     exportSchema = false,
 )
 abstract class ChatDatabase : RoomDatabase() {
     abstract fun conversations(): ConversationDao
     abstract fun skills(): SkillDao
+    abstract fun memories(): MemoryDao
 
     companion object {
         // Chats exist only on-device, so migrations must be explicit — a
@@ -196,9 +228,19 @@ abstract class ChatDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS memories (" +
+                        "id TEXT NOT NULL PRIMARY KEY, text TEXT NOT NULL, " +
+                        "addedAt INTEGER NOT NULL, usedAt INTEGER NOT NULL)",
+                )
+            }
+        }
+
         fun build(context: Context): ChatDatabase =
             Room.databaseBuilder(context.applicationContext, ChatDatabase::class.java, "conversations.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }

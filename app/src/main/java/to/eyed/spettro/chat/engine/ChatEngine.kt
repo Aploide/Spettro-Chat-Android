@@ -61,6 +61,7 @@ class ChatEngine(
     private val tools: ToolRegistry,
     private val mcp: to.eyed.spettro.chat.data.mcp.McpRegistry,
     private val skills: to.eyed.spettro.chat.data.skills.SkillsRepository,
+    private val memory: to.eyed.spettro.chat.data.memory.MemoryStore,
     private val consent: ConsentGate,
     private val permissions: PermissionBridge,
     private val unauthorized: MutableSharedFlow<Unit>,
@@ -140,6 +141,10 @@ class ChatEngine(
             You also have tools for the user's calendar, contacts, reminders, and location. They touch
             personal data, so the app itself shows the user an approval card before each first use —
             call them directly and never pre-ask in prose; if the user denies, accept it and continue without.
+            You have a persistent memory across chats. Use save-memory when you learn a durable fact or
+            preference about the user (name, language, tastes, ongoing projects) — one short line per fact.
+            Use forget-memory when the user corrects or retracts something, or asks you to forget it.
+            A Memory section appears below when anything is remembered; honor it without re-asking.
             When a decision is genuinely the user's to make and guessing would waste work, use ask-user
             to present the choice as a form instead of asking in prose.
             During longer multi-tool runs, use the comment tool to report meaningful progress steps.
@@ -414,9 +419,12 @@ class ChatEngine(
         _stream.value = StreamState.Thinking()
         beginRun()
         sendJob = scope.launch {
-            // The active skill's instructions ride along in the system prompt.
+            // The active skill's instructions and remembered facts ride along
+            // in the system prompt; memory is re-read each turn, so facts
+            // saved mid-turn appear from the next message on.
             val activeSkill = conv.skillId?.let { runCatching { skills.byId(it) }.getOrNull() }
-            val systemPrompt = SYSTEM_PROMPT +
+            val memorySection = runCatching { memory.contextSection() }.getOrDefault("")
+            val systemPrompt = SYSTEM_PROMPT + memorySection +
                 (activeSkill?.let { "\n\n## Active skill: ${it.name}\n${it.instructions}" } ?: "")
             val history = mutableListOf(OutgoingMessage(role = "system", text = systemPrompt))
             conv.messages.mapTo(history) {

@@ -74,6 +74,12 @@ class McpRegistry(private val prefs: AppPrefs) {
 
     // --- Config management (settings sheet) ---
 
+    /** The persisted configs, loading them first if this launch hasn't yet. */
+    suspend fun allServers(): List<McpServerConfig> {
+        ensureLoaded()
+        return _servers.value
+    }
+
     suspend fun addServer(config: McpServerConfig) {
         ensureLoaded()
         persistServers(_servers.value.filter { it.id != config.id } + config)

@@ -54,6 +54,8 @@ fun SettingsSheet(
     onOpenMcpServers: () -> Unit,
     skillCount: Int,
     onOpenSkills: () -> Unit,
+    memoryCount: Int,
+    onOpenMemory: () -> Unit,
     onManageSubscription: () -> Unit,
     onExportChats: () -> Unit,
     onImportChats: () -> Unit,
@@ -149,6 +151,14 @@ fun SettingsSheet(
                 ) {
                     GlassButton("Manage", onClick = onOpenSkills)
                 }
+                RowDivider()
+                SettingRow(
+                    "Memory",
+                    if (memoryCount == 0) "Facts Spettro remembers about you across chats."
+                    else "$memoryCount ${if (memoryCount == 1) "fact" else "facts"} remembered across chats.",
+                ) {
+                    GlassButton("Manage", onClick = onOpenMemory)
+                }
 
                 SectionDivider()
                 SectionHeader("Tool permissions")
@@ -167,12 +177,18 @@ fun SettingsSheet(
                 }
 
                 SectionDivider()
-                SectionHeader("Chats")
-                SettingRow("Export chats", "Save every chat to a single file you can move to another device.") {
+                SectionHeader("Your data")
+                SettingRow(
+                    "Export everything",
+                    "Chats, skills, memory, MCP servers, and settings in one file you can move to another device. Your sign-in is never included.",
+                ) {
                     GlassButton("Export", onClick = onExportChats)
                 }
                 RowDivider()
-                SettingRow("Import chats", "Merge chats from a previously exported file. Nothing here is overwritten by older copies.") {
+                SettingRow(
+                    "Import a backup",
+                    "Merge a Spettro backup (or an old chats-only export). Nothing here is overwritten by older copies.",
+                ) {
                     GlassButton("Import", onClick = onImportChats)
                 }
 

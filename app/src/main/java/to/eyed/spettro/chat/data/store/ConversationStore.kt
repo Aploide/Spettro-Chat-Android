@@ -1,7 +1,6 @@
 package to.eyed.spettro.chat.data.store
 
 import android.content.Context
-import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -54,19 +53,6 @@ data class Conversation(
     val displayTitle: String get() = title.ifBlank { preview.ifBlank { "New Chat" } }
 }
 
-/**
- * Envelope written by "Export chats" and read back by "Import chats".
- * Conversations use the same schema as the pre-Room per-chat files, so old
- * backups of those files remain readable by hand if it ever matters.
- */
-@Serializable
-data class ChatExport(
-    val app: String = "spettro-chat",
-    val version: Int = 1,
-    val exportedAt: Long = 0,
-    val conversations: List<Conversation> = emptyList(),
-)
-
 data class ImportResult(val imported: Int, val skipped: Int)
 
 class ConversationStore(private val context: Context, private val dao: ConversationDao) {
@@ -117,40 +103,28 @@ class ConversationStore(private val context: Context, private val dao: Conversat
         dao.deleteAll()
     }
 
-    /** Writes every chat to [uri] as one JSON document; returns the count. */
-    suspend fun exportTo(uri: Uri): Int = withContext(Dispatchers.IO) {
-        val all = loadAll()
-        val payload = ChatExport(exportedAt = System.currentTimeMillis(), conversations = all)
-        val out = context.contentResolver.openOutputStream(uri, "wt")
-            ?: throw IllegalStateException("could not open the selected file")
-        out.bufferedWriter().use { it.write(json.encodeToString(ChatExport.serializer(), payload)) }
-        all.size
-    }
-
     /**
-     * Merges an exported file into the store: unknown chats are added, known
-     * ones are replaced only when the file's copy is newer (so importing an
-     * old backup never clobbers fresher local history).
+     * Merges exported chats into the store: unknown chats are added, known
+     * ones are replaced only when the imported copy is newer (so importing an
+     * old backup never clobbers fresher local history). File IO lives in
+     * BackupManager, which bundles chats with the rest of the app's data.
      */
-    suspend fun importFrom(uri: Uri): ImportResult = withContext(Dispatchers.IO) {
+    suspend fun merge(imported: List<Conversation>): ImportResult = withContext(Dispatchers.IO) {
         ensureMigrated()
-        val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-            ?: throw IllegalStateException("could not read the selected file")
-        val payload = json.decodeFromString(ChatExport.serializer(), text)
-        var imported = 0
+        var added = 0
         var skipped = 0
-        payload.conversations.forEach { conv ->
+        imported.forEach { conv ->
             val existing = if (conv.id.isBlank()) null else dao.updatedAt(conv.id)
             when {
                 conv.id.isBlank() -> skipped++
                 existing != null && existing >= conv.updatedAt -> skipped++
                 else -> {
                     write(conv)
-                    imported++
+                    added++
                 }
             }
         }
-        ImportResult(imported, skipped)
+        ImportResult(added, skipped)
     }
 
     private suspend fun write(conversation: Conversation) {

@@ -127,6 +127,17 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             container.unauthorized.collect { signOut(local = true) }
         }
+        // A backup import rewrites prefs behind this ViewModel's back; reload
+        // the UI-facing settings so the change shows without a restart.
+        viewModelScope.launch {
+            container.settingsChanged.collect {
+                val s = prefs.load()
+                if (s.selectedModel.isNotBlank()) _selectedModel.value = s.selectedModel
+                _thinkingLevel.value = ThinkingLevel.fromId(s.thinkingLevel)
+                _streamingAnimations.value = s.streamingAnimations
+                _hapticFeedback.value = s.hapticFeedback
+            }
+        }
     }
 
     /**
