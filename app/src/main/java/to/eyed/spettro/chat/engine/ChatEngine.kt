@@ -6,6 +6,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -148,9 +150,18 @@ class ChatEngine(
             Use web-search and web-fetch for current events, live data, or facts you are not sure about.
             Use current-time whenever today's date or the time matters — never guess it.
             Use device-info for questions about this phone's battery, network, or locale.
-            You also have tools for the user's calendar, contacts, reminders, and location. They touch
-            personal data, so the app itself shows the user an approval card before each first use —
-            call them directly and never pre-ask in prose; if the user denies, accept it and continue without.
+            You also have tools for the user's calendar, contacts, reminders, location, and notifications,
+            and tools that act on this phone: compose-message pre-fills an SMS or WhatsApp message (the
+            user sends it themselves), set-alarm pre-fills an alarm or timer in the clock app, open-on-phone
+            launches apps and links, and media-control works like a headset play/pause button. They touch
+            personal data or act on the device, so the app itself shows the user an approval card before
+            each first use — call them directly and never pre-ask in prose; if the user denies, accept it
+            and continue without.
+            You can work in the background: spawn-task starts an independent agent run for self-contained
+            work (long research, drafting) whose result arrives as a new chat, and scheduled-tasks runs a
+            prompt later or on a repeat ("every morning at 8, brief me on the weather"), delivered as a
+            notification. Prefer answering directly; reach for these when the user asks for something to
+            happen later, repeatedly, or alongside the conversation.
             You have a persistent memory across chats. Use save-memory when you learn a durable fact or
             preference about the user (name, language, tastes, ongoing projects) — one short line per fact.
             Use forget-memory when the user corrects or retracts something, or asks you to forget it.
@@ -398,6 +409,9 @@ class ChatEngine(
                 unauthorized.tryEmit(Unit)
             } catch (e: Exception) {
                 _stream.value = StreamState.Error("Compacting failed: ${friendlyError(e)}")
+                // The service's completion notification hangs off this event;
+                // without it a backgrounded failure would end silently.
+                _events.tryEmit(EngineEvent.RunFinished(conv.id, currentTitle(conv.id), failed = true))
             } finally {
                 _isRunning.value = false
             }
@@ -594,33 +608,48 @@ class ChatEngine(
                     // it from whatever the next round streams.
                     if (roundText.isNotEmpty()) textAcc.append("\n\n")
                     history += OutgoingMessage(role = "assistant", text = roundText.toString(), toolCalls = calls)
-                    calls.forEachIndexed { i, call ->
-                        // The non-streamed fallback emits no ToolCallStart, so
-                        // the placeholder row may not exist yet.
-                        val idx = if (runBase + i < toolRuns.size) runBase + i else {
-                            toolRuns += ToolRunUi(call.name, "", running = true)
-                            toolRuns.size - 1
+                    // Parallel-safe calls (web, device reads) of the same
+                    // round start together; interactive and gated calls stay
+                    // sequential so consent cards and forms appear one at a
+                    // time. Results are appended in call order regardless.
+                    coroutineScope {
+                        val prefetched = calls.map { call ->
+                            if (calls.size > 1 && tools.isParallelSafe(call.name)) {
+                                async {
+                                    tools.execute(call) to tools.doneLabel(call.name, call.arguments)
+                                }
+                            } else {
+                                null
+                            }
                         }
-                        toolRuns[idx] = ToolRunUi(call.name, runningLabel(call.name, call.arguments), running = true)
-                        publish()
-                        val meta = tools.sensitiveMeta(call.name, call.arguments)
-                        val (result, doneLabel) = when {
-                            call.name == ToolRegistry.ASK_USER -> executeAskUser(call)
-                            call.name == LOAD_SKILL -> executeLoadSkill(call)
-                            call.name == CREATE_SKILL -> executeCreateSkill(call)
-                            mcp.isMcpTool(call.name) -> executeMcp(call)
-                            meta != null -> executeGated(meta, call)
-                            else -> tools.execute(call) to tools.doneLabel(call.name, call.arguments)
+                        calls.forEachIndexed { i, call ->
+                            // The non-streamed fallback emits no ToolCallStart, so
+                            // the placeholder row may not exist yet.
+                            val idx = if (runBase + i < toolRuns.size) runBase + i else {
+                                toolRuns += ToolRunUi(call.name, "", running = true)
+                                toolRuns.size - 1
+                            }
+                            toolRuns[idx] = ToolRunUi(call.name, runningLabel(call.name, call.arguments), running = true)
+                            publish()
+                            val meta = tools.sensitiveMeta(call.name, call.arguments)
+                            val (result, doneLabel) = prefetched[i]?.await() ?: when {
+                                call.name == ToolRegistry.ASK_USER -> executeAskUser(call)
+                                call.name == LOAD_SKILL -> executeLoadSkill(call)
+                                call.name == CREATE_SKILL -> executeCreateSkill(call)
+                                mcp.isMcpTool(call.name) -> executeMcp(call)
+                                meta != null -> executeGated(meta, call)
+                                else -> tools.execute(call) to tools.doneLabel(call.name, call.arguments)
+                            }
+                            toolRuns[idx] = ToolRunUi(
+                                call.name,
+                                doneLabel,
+                                running = false,
+                                failed = result.isError,
+                                output = result.output,
+                            )
+                            publish()
+                            history += OutgoingMessage(role = "tool", text = result.output, toolCallId = call.id)
                         }
-                        toolRuns[idx] = ToolRunUi(
-                            call.name,
-                            doneLabel,
-                            running = false,
-                            failed = result.isError,
-                            output = result.output,
-                        )
-                        publish()
-                        history += OutgoingMessage(role = "tool", text = result.output, toolCallId = call.id)
                     }
                 }
                 appendAssistant(textAcc.toString(), reasoningAcc.toString(), toolRuns.toStored())
@@ -725,6 +754,12 @@ class ChatEngine(
         "tool:${ToolRegistry.CONTACTS_SEARCH}" -> "your contacts"
         "tool:${ToolRegistry.SET_REMINDER}" -> "reminders"
         "tool:${ToolRegistry.GET_LOCATION}" -> "your location"
+        "tool:${ToolRegistry.SCHEDULED_TASKS}" -> "scheduling"
+        "tool:${ToolRegistry.COMPOSE_MESSAGE}" -> "messaging"
+        "tool:${ToolRegistry.SET_ALARM}" -> "your alarms"
+        "tool:${ToolRegistry.OPEN_ON_PHONE}" -> "opening apps"
+        "tool:${ToolRegistry.MEDIA_CONTROL}" -> "media control"
+        "tool:${ToolRegistry.READ_NOTIFICATIONS}" -> "your notifications"
         else -> consentKey.removePrefix("tool:").removePrefix("mcp:")
     }
 

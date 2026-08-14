@@ -37,6 +37,7 @@ class AppPrefs(private val context: Context) {
         val autoCompact = booleanPreferencesKey("auto_compact")
         val consentAlways = stringSetPreferencesKey("tool_consent_always")
         val remindersJson = stringPreferencesKey("reminders_json")
+        val scheduledTasksJson = stringPreferencesKey("scheduled_tasks_json")
         val mcpServersJson = stringPreferencesKey("mcp_servers")
         val mcpToolsCacheJson = stringPreferencesKey("mcp_tools_cache")
     }
@@ -182,6 +183,14 @@ class AppPrefs(private val context: Context) {
 
     suspend fun saveRemindersJson(json: String) {
         context.dataStore.edit { it[Keys.remindersJson] = json }
+    }
+
+    // --- Scheduled agent tasks (JSON list; WorkManager owns the timing) ---
+
+    suspend fun scheduledTasksJson(): String? = context.dataStore.data.first()[Keys.scheduledTasksJson]
+
+    suspend fun saveScheduledTasksJson(json: String) {
+        context.dataStore.edit { it[Keys.scheduledTasksJson] = json }
     }
 
     // --- MCP server configs and cached tool lists ---

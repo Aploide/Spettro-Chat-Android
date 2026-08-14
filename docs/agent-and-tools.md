@@ -32,6 +32,10 @@ Key properties:
 
 - **Bounded.** After `MAX_TOOL_ROUNDS` (6) the next request goes out with no tools at all,
   so the model must answer with what it has gathered. A loop cannot run forever.
+- **Parallel-safe calls run concurrently.** When a round carries several calls, the ones
+  marked parallel-safe (`web-search`, `web-fetch`, `current-time`, `device-info`) start
+  together on IO; interactive and consent-gated calls stay sequential so cards and forms
+  appear one at a time. Results are appended to the history in call order either way.
 - **Streaming is throttled.** Token deltas arrive faster than markdown can re-parse without
   flicker, so stream-state publishes are batched to at most one per 80 ms, then flushed.
 - **Partial work is kept.** Stopping a turn, or an error after text has arrived, persists
@@ -74,6 +78,13 @@ implementations sit beside it.
 | `get-location` | One coarse, city-level fix | ✓ |
 | `save-memory` | Stores one short durable fact | — |
 | `forget-memory` | Removes matching facts | — |
+| `spawn-task` | Starts an independent background agent run | — |
+| `scheduled-tasks` | Creates, lists, or cancels scheduled agent runs | ✓ |
+| `compose-message` | Opens SMS/WhatsApp pre-filled; the user taps send | ✓ |
+| `set-alarm` | Opens the clock app pre-filled with an alarm or timer | ✓ |
+| `open-on-phone` | Launches an installed app by name, or any link | ✓ |
+| `media-control` | Play/pause/next/previous, like a headset button | ✓ |
+| `read-notifications` | Reads the status bar, read-only | ✓ |
 | `comment` | Emits a progress line visible in the transcript | — |
 | `ask-user` | Presents up to four questions as a form and waits | — |
 | `load-skill` | Pulls a skill's instructions mid-run | — |
@@ -95,6 +106,40 @@ Notes on individual tools:
   persisted and re-scheduled by a boot receiver, since alarms do not survive a reboot.
 - **`get-location`** takes one fix from the platform `LocationManager` rather than the fused
   location provider, rounds the coordinates, and only works while the app is on screen.
+- **`compose-message`** and **`set-alarm`** never act silently: the messaging app opens with
+  the text pre-filled and the user taps send; the clock app opens showing the new alarm or
+  timer. `open-on-phone` matches installed apps by launcher label (exact, then prefix, then
+  contains). All three launch activities, so they require the app on screen. `media-control`
+  dispatches media key events through `AudioManager` — that one is immediate, because a
+  remote control that asks first isn't one.
+- **`read-notifications`** is read-only by design and double-gated: the OS-level
+  notification-access grant (a special settings screen, surfaced under Settings →
+  Automation & device) plus the ordinary consent card on each first use per chat. Group
+  summaries and Spettro's own notifications are filtered out.
+
+## Background and scheduled runs
+
+`AgentRunner` (`engine/AgentRunner.kt`) is the same loop with nobody watching: no stream
+state, no ask-user, no consent card. Anything that would need to stop and wait for the user
+degrades into an explicit tool error — sensitive tools run only under a persisted
+"Always allow" grant, and `ask-user`/`spawn-task` are never offered (a background task must
+not fan out into more background tasks).
+
+Two things feed it:
+
+- **`spawn-task`** hands a prompt to `TaskManager` (`engine/TaskManager.kt`), which runs up
+  to three tasks concurrently in the app scope, under the same foreground service as
+  interactive turns. The sidebar shows a task list (running label, finished/failed state);
+  tapping a finished task opens its result.
+- **`scheduled-tasks`** persists a task list in preferences and mirrors it into WorkManager
+  as unique one-time work (which survives reboots and Doze). Recurring tasks re-enqueue
+  themselves after each run, so "daily at 08:00" stays anchored instead of drifting.
+  Pending schedules are listed under Settings → Automation & device → Scheduled tasks.
+
+Either way the result lands as a new conversation — the prompt as the user message, the
+answer plus its tool record as the assistant message — and a content-free notification
+(the task title, never the result). Scheduled results always notify; spawned results only
+when the app is off screen.
 
 ### `ask-user`
 

@@ -168,6 +168,31 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    // Background tasks (spawned and scheduled), for the sidebar task list.
+    val backgroundTasks get() = container.taskManager.tasks
+    fun dismissTask(id: String) = container.taskManager.dismiss(id)
+
+    // Scheduled tasks, for the Settings management sheet.
+    private val _scheduledTasks =
+        MutableStateFlow<List<to.eyed.spettro.chat.data.tools.ScheduledTask>>(emptyList())
+    val scheduledTasks: StateFlow<List<to.eyed.spettro.chat.data.tools.ScheduledTask>> =
+        _scheduledTasks.asStateFlow()
+
+    fun refreshScheduledTasks() {
+        viewModelScope.launch {
+            _scheduledTasks.value =
+                to.eyed.spettro.chat.data.tools.ScheduledTasks.load(container.prefs)
+        }
+    }
+
+    fun cancelScheduledTask(id: String) {
+        viewModelScope.launch {
+            to.eyed.spettro.chat.data.tools.ScheduledTasks.cancel(container.appContext, container.prefs, id)
+            _scheduledTasks.value =
+                to.eyed.spettro.chat.data.tools.ScheduledTasks.load(container.prefs)
+        }
+    }
+
     // Memory: remembered facts, editable by the user in Settings.
     val memories get() = container.memory.all
     fun addMemory(text: String) {

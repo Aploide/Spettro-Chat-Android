@@ -15,6 +15,7 @@ import to.eyed.spettro.chat.engine.PermissionBridge
 
 /** Manual DI: one instance of each service, shared by the ViewModels. */
 class AppContainer(context: Context) {
+    val appContext: Context = context.applicationContext
     val prefs = AppPrefs(context.applicationContext)
     val api = SpettroApi(
         baseUrl = debugOverride(context, "spettro_api_url") ?: SpettroApi.DEFAULT_BASE_URL,
@@ -45,6 +46,16 @@ class AppContainer(context: Context) {
     /** Emitted after a backup import rewrote settings, so UI state reloads them. */
     val settingsChanged = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
+    /** The headless agent loop behind background and scheduled tasks. */
+    val runner = to.eyed.spettro.chat.engine.AgentRunner(
+        api, tools, mcp, memory, consent, permissions, prefs,
+    )
+
+    /** Concurrent background agent tasks (spawned and scheduled). */
+    val taskManager = to.eyed.spettro.chat.engine.TaskManager(
+        context.applicationContext, runner, conversations,
+    )
+
     /** The app-scoped agent loop; built last so it can take everything above. */
     val engine = ChatEngine(
         context.applicationContext, api, conversations, tools, mcp, skills, memory,
@@ -58,6 +69,18 @@ class AppContainer(context: Context) {
 
     init {
         tools.appVisibleProvider = { engine.appVisible }
+        taskManager.appVisibleProvider = { engine.appVisible }
+        // Finished tasks write their result chat straight to the store; the
+        // engine re-reads so it appears in the sidebar without a restart.
+        taskManager.onConversationsChanged = { engine.refreshConversations() }
+        tools.taskSpawner = { title, prompt ->
+            val task = taskManager.spawn(title, prompt)
+            to.eyed.spettro.chat.data.tools.ToolResult(
+                "Background task \"${task.title}\" started (id ${task.id}). It runs on its own; " +
+                    "the result will arrive as a new chat (and a notification if the app is closed). " +
+                    "Do not wait for it — answer the user now.",
+            )
+        }
     }
 
     companion object {

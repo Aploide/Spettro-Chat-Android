@@ -85,6 +85,24 @@ object AgentNotifications {
             .setContentIntent(contentIntent(context))
             .build()
 
+    /**
+     * A background or scheduled task finished. Content-free like [done]:
+     * the task's title, never its result.
+     */
+    fun taskDone(context: Context, taskTitle: String, failed: Boolean, scheduled: Boolean): Notification {
+        val what = if (scheduled) "Scheduled task" else "Background task"
+        return NotificationCompat.Builder(context, CHANNEL_DONE)
+            .setSmallIcon(to.eyed.spettro.chat.R.drawable.ic_launcher_foreground)
+            .setContentTitle(if (failed) "$what hit a problem" else "$what finished")
+            .setContentText(
+                if (failed) "“${taskTitle.take(60)}” stopped on an error — tap to see what happened."
+                else "“${taskTitle.take(60)}” is done — tap to read the result.",
+            )
+            .setAutoCancel(true)
+            .setContentIntent(contentIntent(context))
+            .build()
+    }
+
     fun needsInput(context: Context, reason: String): Notification =
         NotificationCompat.Builder(context, CHANNEL_INPUT)
             .setSmallIcon(to.eyed.spettro.chat.R.drawable.ic_launcher_foreground)

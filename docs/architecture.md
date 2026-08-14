@@ -64,6 +64,8 @@ message carrying several.
 | Component | Responsibility |
 |---|---|
 | `ChatEngine` | The agent loop; owns conversation state and stream state |
+| `AgentRunner` | The same loop headless, for background and scheduled tasks |
+| `TaskManager` | Concurrent background tasks; results become chats + notifications |
 | `ChatRunService` | Foreground service that keeps a run alive off-screen |
 | `ConsentGate` | In-app approval for tools that touch personal data |
 | `PermissionBridge` | Relays Android runtime-permission requests to whatever activity is on screen |
@@ -121,7 +123,15 @@ that it takes time.
    the tool *name* alone so no model-written text reaches the lock screen.
 4. When the app is not visible, it also posts completion and "needs your input"
    notifications. Completion notifications carry the chat title and never message content.
-5. `isRunning` going false tears the service down.
+5. The service winds down only when the interactive turn *and* every background task are
+   idle (`engine.isRunning` ORed with `taskManager.anyRunning`). With no interactive turn,
+   the ongoing notification narrates the task count instead of tool activity.
+
+Scheduled tasks take a different path: WorkManager wakes the process at the scheduled time
+and runs the headless loop inside its worker execution window (no foreground promotion
+needed — a bounded 6-round run fits comfortably), then re-enqueues the next occurrence for
+recurring tasks. WorkManager persists its queue, so schedules survive reboots without the
+boot receiver's help.
 
 Swiping the app away does not stop a run: finishing the task is the point, and the
 completion notification is the way back in. On Android 15+, `onTimeout` winds a run down

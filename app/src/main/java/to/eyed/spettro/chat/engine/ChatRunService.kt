@@ -128,11 +128,35 @@ class ChatRunService : Service() {
             }
         }
 
+        // The service outlives the interactive turn while background tasks
+        // are still working; it only winds down once everything is idle.
+        val taskManager = container.taskManager
         scope.launch {
-            engine.isRunning.collect { running ->
-                if (!running) {
+            kotlinx.coroutines.flow.combine(engine.isRunning, taskManager.anyRunning) { turn, tasks ->
+                turn || tasks
+            }.collect { active ->
+                if (!active) {
                     ServiceCompat.stopForeground(this@ChatRunService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                     stopSelf()
+                }
+            }
+        }
+
+        // With no interactive turn, the ongoing notification narrates the
+        // task count instead of tool activity.
+        scope.launch {
+            kotlinx.coroutines.flow.combine(engine.isRunning, taskManager.tasks) { turn, tasks ->
+                if (turn) null else tasks.count { it.status == TaskStatus.Running }
+            }.collect { running ->
+                if (running != null && running > 0) {
+                    AgentNotifications.notifySafely(
+                        this@ChatRunService,
+                        AgentNotifications.PROGRESS_ID,
+                        AgentNotifications.progress(
+                            this@ChatRunService,
+                            if (running == 1) "Running a background task…" else "Running $running background tasks…",
+                        ),
+                    )
                 }
             }
         }

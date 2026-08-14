@@ -72,6 +72,10 @@ fun SettingsSheet(
     onOpenSkills: () -> Unit,
     memoryCount: Int,
     onOpenMemory: () -> Unit,
+    scheduledTaskCount: Int,
+    onOpenScheduledTasks: () -> Unit,
+    notificationAccessEnabled: Boolean,
+    onOpenNotificationAccess: () -> Unit,
     onManageSubscription: () -> Unit,
     onExportChats: () -> Unit,
     onImportChats: () -> Unit,
@@ -158,6 +162,37 @@ fun SettingsSheet(
                         else "$memoryCount ${if (memoryCount == 1) "fact" else "facts"} remembered across chats.",
                     ) {
                         GlassButton("Manage", onClick = onOpenMemory)
+                    }
+                }
+
+                SectionHeader("Automation & device")
+                SettingsCard {
+                    SettingRow(
+                        "Scheduled tasks",
+                        if (scheduledTaskCount == 0) {
+                            "Agent runs on a schedule — ask Spettro to \"brief me every morning at 8\"."
+                        } else {
+                            "$scheduledTaskCount ${if (scheduledTaskCount == 1) "task" else "tasks"} scheduled to run on their own."
+                        },
+                    ) {
+                        GlassButton("Manage", onClick = onOpenScheduledTasks)
+                    }
+                    CardDivider()
+                    SettingRow(
+                        "Notification access",
+                        if (notificationAccessEnabled) {
+                            "On — Spettro can read status-bar notifications (read-only), " +
+                                "and still asks you before each first use in a chat."
+                        } else {
+                            "Off. Lets Spettro answer \"what did I miss?\" by reading your status-bar " +
+                                "notifications, read-only. Granted in the Android settings; every use " +
+                                "still needs your in-chat approval."
+                        },
+                    ) {
+                        GlassButton(
+                            if (notificationAccessEnabled) "Settings" else "Enable",
+                            onClick = onOpenNotificationAccess,
+                        )
                     }
                 }
 

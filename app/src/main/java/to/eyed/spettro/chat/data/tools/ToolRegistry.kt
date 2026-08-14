@@ -42,6 +42,9 @@ class ToolRegistry(
     private val contacts = ContactsTools(context)
     private val reminders = ReminderTools(context, prefs)
     private val location = LocationTools(context)
+    private val actuators = ActuatorTools(context)
+    private val scheduled = ScheduledTaskTools(context, prefs)
+    private val notifications = NotificationTools(context)
 
     /**
      * Whether any activity is on screen right now; wired to the engine by
@@ -49,6 +52,12 @@ class ToolRegistry(
      * softly while the app is backgrounded.
      */
     var appVisibleProvider: () -> Boolean = { true }
+
+    /**
+     * Runs a spawn-task call; wired to the TaskManager by AppContainer (the
+     * registry is built before the engine-side services exist).
+     */
+    var taskSpawner: (suspend (title: String, prompt: String) -> ToolResult)? = null
 
     companion object {
         const val WEB_SEARCH = "web-search"
@@ -63,7 +72,31 @@ class ToolRegistry(
         const val GET_LOCATION = "get-location"
         const val SAVE_MEMORY = "save-memory"
         const val FORGET_MEMORY = "forget-memory"
+        const val SPAWN_TASK = "spawn-task"
+        const val SCHEDULED_TASKS = "scheduled-tasks"
+        const val COMPOSE_MESSAGE = "compose-message"
+        const val SET_ALARM = "set-alarm"
+        const val OPEN_ON_PHONE = "open-on-phone"
+        const val MEDIA_CONTROL = "media-control"
+        const val READ_NOTIFICATIONS = "read-notifications"
+
+        /**
+         * Tools that only make sense with a user present; the headless
+         * [to.eyed.spettro.chat.engine.AgentRunner] never offers them
+         * (spawn-task also so background tasks cannot fan out further).
+         */
+        val INTERACTIVE_ONLY = setOf(ASK_USER, SPAWN_TASK)
+
+        /**
+         * Tools safe to execute concurrently within one round: no consent
+         * card, no UI, no ordering dependency between calls. Web calls are
+         * the latency win this exists for.
+         */
+        val PARALLEL_SAFE = setOf(WEB_SEARCH, WEB_FETCH, CURRENT_TIME, DEVICE_INFO)
     }
+
+    /** Whether calls to this tool may run concurrently with its round's other calls. */
+    fun isParallelSafe(name: String): Boolean = name in PARALLEL_SAFE
 
     val specs: List<ToolSpec> = listOf(
         ToolSpec(
@@ -113,6 +146,59 @@ class ToolRegistry(
             description = "Get the device's approximate (city-level) location. Only works while the app is on " +
                 "screen. The app asks the user for approval before any location access.",
             parametersJson = """{"type":"object","properties":{},"required":[]}""",
+        ),
+        ToolSpec(
+            name = SPAWN_TASK,
+            description = "Start an independent background task: a separate agent run that works on its own " +
+                "(with web access and any always-allowed tools) while this conversation continues. Its result " +
+                "arrives as a new chat and a notification. Use it for self-contained work the user doesn't need " +
+                "to watch — long research, monitoring something, drafting a document — never for things needing " +
+                "their input midway. Returns immediately; do not wait for the task.",
+            parametersJson = """{"type":"object","properties":{"title":{"type":"string","description":"Short name for the task, shown in the task list and as the result chat's title."},"prompt":{"type":"string","description":"Complete, self-contained instructions for the task; it cannot ask follow-up questions."}},"required":["title","prompt"]}""",
+        ),
+        ToolSpec(
+            name = SCHEDULED_TASKS,
+            description = "Schedule an agent run for later, list scheduled runs, or cancel one. A scheduled run " +
+                "executes on its own (web access plus any always-allowed tools, no questions) and delivers its " +
+                "result as a notification and a new chat — e.g. \"every morning at 8, check the weather and my " +
+                "calendar and brief me\". Timing is approximate (the OS may delay a few minutes). The app asks " +
+                "the user for approval first.",
+            parametersJson = """{"type":"object","properties":{"action":{"type":"string","enum":["create","list","cancel"],"description":"create a scheduled run, list existing ones, or cancel by id"},"title":{"type":"string","description":"create: short name, shown in the result notification and chat title"},"prompt":{"type":"string","description":"create: complete self-contained instructions for the run"},"at":{"type":"string","description":"create: first run as ISO local datetime, e.g. 2026-08-15T08:00"},"repeat":{"type":"string","enum":["none","hourly","daily","weekly"],"description":"create: how the run repeats (default none = one-time)"},"id":{"type":"string","description":"cancel: the task id from list"}},"required":["action"]}""",
+        ),
+        ToolSpec(
+            name = COMPOSE_MESSAGE,
+            description = "Open the user's SMS app or WhatsApp with a message pre-filled to a number; the user " +
+                "reviews and taps send themselves — nothing is sent automatically. Use contacts-search first if " +
+                "you only have a name. Only works while the app is on screen. The app asks the user for approval first.",
+            parametersJson = """{"type":"object","properties":{"channel":{"type":"string","enum":["sms","whatsapp"],"description":"where to compose the message"},"phone":{"type":"string","description":"recipient phone number with country code, e.g. +39333...; optional for whatsapp (opens its contact picker)"},"message":{"type":"string","description":"the message text to pre-fill"}},"required":["channel","message"]}""",
+        ),
+        ToolSpec(
+            name = SET_ALARM,
+            description = "Set an alarm or a countdown timer via the phone's clock app, opened pre-filled so the " +
+                "user confirms it there. Use set-reminder instead for date-based reminders with a message. " +
+                "Only works while the app is on screen. The app asks the user for approval first.",
+            parametersJson = """{"type":"object","properties":{"type":{"type":"string","enum":["alarm","timer"],"description":"a wake-up alarm at a time of day, or a countdown timer"},"hour":{"type":"integer","description":"alarm: hour of day, 0-23"},"minute":{"type":"integer","description":"alarm: minute, 0-59 (default 0)"},"length_minutes":{"type":"integer","description":"timer: countdown length in minutes"},"message":{"type":"string","description":"optional label shown on the alarm or timer"}},"required":["type"]}""",
+        ),
+        ToolSpec(
+            name = OPEN_ON_PHONE,
+            description = "Open an installed app by name, or open a link (https://, geo:, or any deep link) in " +
+                "whatever handles it. Only works while the app is on screen. The app asks the user for approval first.",
+            parametersJson = """{"type":"object","properties":{"app":{"type":"string","description":"name of an installed app, e.g. Spotify"},"url":{"type":"string","description":"a link to open instead of an app, e.g. https://maps.google.com/?q=... or geo:45.4,9.2"}},"required":[]}""",
+        ),
+        ToolSpec(
+            name = MEDIA_CONTROL,
+            description = "Control whatever is playing media on this phone: play, pause, skip to the next or " +
+                "previous track, or stop. Acts immediately, like pressing a headset button. The app asks the " +
+                "user for approval first.",
+            parametersJson = """{"type":"object","properties":{"action":{"type":"string","enum":["play","pause","play_pause","next","previous","stop"],"description":"the media key to send"}},"required":["action"]}""",
+        ),
+        ToolSpec(
+            name = READ_NOTIFICATIONS,
+            description = "Read the notifications currently in the phone's status bar — \"what did I miss?\". " +
+                "Read-only: nothing is dismissed or answered. Requires the user to have enabled notification " +
+                "access for Spettro in the Android settings (the tool's error says how if not). The app asks " +
+                "the user for approval before each first use.",
+            parametersJson = """{"type":"object","properties":{"max_results":{"type":"integer","description":"Maximum notifications to return (default 25, max 50)."}},"required":[]}""",
         ),
         // Descriptions modeled on the CLI's save-memory (llm_runtime_prompt.go).
         ToolSpec(
@@ -174,6 +260,22 @@ class ToolRegistry(
         GET_LOCATION -> "Reading your location…"
         SAVE_MEMORY -> "Saving a memory…"
         FORGET_MEMORY -> "Forgetting a memory…"
+        SPAWN_TASK -> quotedArg(argumentsJson, "title")
+            ?.let { "Starting background task $it…" } ?: "Starting a background task…"
+        SCHEDULED_TASKS -> when (ToolArgs.string(argumentsJson, "action")) {
+            "list" -> "Checking scheduled tasks…"
+            "cancel" -> "Cancelling a scheduled task…"
+            else -> "Scheduling a task…"
+        }
+        COMPOSE_MESSAGE -> if (ToolArgs.string(argumentsJson, "channel") == "whatsapp") {
+            "Composing a WhatsApp message…"
+        } else {
+            "Composing a text message…"
+        }
+        SET_ALARM -> if (ToolArgs.string(argumentsJson, "type") == "timer") "Setting a timer…" else "Setting an alarm…"
+        OPEN_ON_PHONE -> ToolArgs.string(argumentsJson, "app")?.let { "Opening ${it.take(40)}…" } ?: "Opening a link…"
+        MEDIA_CONTROL -> "Controlling media playback…"
+        READ_NOTIFICATIONS -> "Reading your notifications…"
         ASK_USER -> "Waiting for your answer…"
         COMMENT -> commentMessage(argumentsJson) ?: "…"
         else -> "Running $name…"
@@ -195,6 +297,18 @@ class ToolRegistry(
         GET_LOCATION -> "Read your location"
         SAVE_MEMORY -> quotedArg(argumentsJson, "fact")?.let { "Remembered $it" } ?: "Saved a memory"
         FORGET_MEMORY -> quotedArg(argumentsJson, "fact")?.let { "Forgot $it" } ?: "Forgot a memory"
+        SPAWN_TASK -> quotedArg(argumentsJson, "title")
+            ?.let { "Started background task $it" } ?: "Started a background task"
+        SCHEDULED_TASKS -> when (ToolArgs.string(argumentsJson, "action")) {
+            "list" -> "Checked scheduled tasks"
+            "cancel" -> "Cancelled a scheduled task"
+            else -> "Scheduled a task"
+        }
+        COMPOSE_MESSAGE -> "Opened the message composer"
+        SET_ALARM -> if (ToolArgs.string(argumentsJson, "type") == "timer") "Opened a timer to confirm" else "Opened an alarm to confirm"
+        OPEN_ON_PHONE -> ToolArgs.string(argumentsJson, "app")?.let { "Opened ${it.take(40)}" } ?: "Opened a link"
+        MEDIA_CONTROL -> "Sent a media command"
+        READ_NOTIFICATIONS -> "Read your notifications"
         ASK_USER -> "Asked for your input"
         // A comment's whole point is its text; the label is the message.
         COMMENT -> commentMessage(argumentsJson) ?: "…"
@@ -214,6 +328,13 @@ class ToolRegistry(
                 GET_LOCATION -> location.current(appVisibleProvider())
                 SAVE_MEMORY -> saveMemory(call.arguments)
                 FORGET_MEMORY -> forgetMemory(call.arguments)
+                SPAWN_TASK -> spawnTask(call.arguments)
+                SCHEDULED_TASKS -> scheduled.run(call.arguments)
+                COMPOSE_MESSAGE -> actuators.composeMessage(call.arguments, appVisibleProvider())
+                SET_ALARM -> actuators.setAlarm(call.arguments, appVisibleProvider())
+                OPEN_ON_PHONE -> actuators.openOnPhone(call.arguments, appVisibleProvider())
+                MEDIA_CONTROL -> actuators.mediaControl(call.arguments)
+                READ_NOTIFICATIONS -> notifications.read(call.arguments)
                 // The CLI echoes the message back verbatim as the result.
                 COMMENT -> ToolResult(ToolArgs.string(call.arguments, "message") ?: "")
                 // ask-user blocks on the person; the ViewModel intercepts it
@@ -270,7 +391,65 @@ class ToolRegistry(
             permissions = listOf(Manifest.permission.ACCESS_COARSE_LOCATION),
             rationale = "Reading your location needs the Android location permission.",
         )
+        SCHEDULED_TASKS -> SensitiveMeta(
+            consentKey = "tool:$SCHEDULED_TASKS",
+            consentTitle = "Allow scheduling background tasks?",
+            consentDetail = "The assistant wants to manage scheduled tasks that run on their own and " +
+                "deliver results as notifications. You can review them under Settings → Scheduled tasks.",
+            permissions = emptyList(),
+            rationale = "",
+        )
+        COMPOSE_MESSAGE -> SensitiveMeta(
+            consentKey = "tool:$COMPOSE_MESSAGE",
+            consentTitle = "Allow composing messages?",
+            consentDetail = "The assistant wants to open your messaging app with a message pre-filled. " +
+                "Nothing is sent until you tap send there yourself.",
+            permissions = emptyList(),
+            rationale = "",
+        )
+        SET_ALARM -> SensitiveMeta(
+            consentKey = "tool:$SET_ALARM",
+            consentTitle = "Allow setting alarms and timers?",
+            consentDetail = "The assistant wants to open your clock app pre-filled with an alarm or timer. " +
+                "You confirm it there.",
+            permissions = emptyList(),
+            rationale = "",
+        )
+        OPEN_ON_PHONE -> SensitiveMeta(
+            consentKey = "tool:$OPEN_ON_PHONE",
+            consentTitle = "Allow opening apps and links?",
+            consentDetail = "The assistant wants to open an app or a link on this phone.",
+            permissions = emptyList(),
+            rationale = "",
+        )
+        MEDIA_CONTROL -> SensitiveMeta(
+            consentKey = "tool:$MEDIA_CONTROL",
+            consentTitle = "Allow controlling media playback?",
+            consentDetail = "The assistant wants to send play/pause/skip commands to whatever is playing " +
+                "on this phone, like pressing a headset button.",
+            permissions = emptyList(),
+            rationale = "",
+        )
+        READ_NOTIFICATIONS -> SensitiveMeta(
+            consentKey = "tool:$READ_NOTIFICATIONS",
+            consentTitle = "Allow reading your notifications?",
+            consentDetail = "The assistant wants to read the notifications currently in your status bar. " +
+                "Read-only — nothing is dismissed or answered. Also requires Android's notification-access " +
+                "grant, which you control in the system settings.",
+            permissions = emptyList(),
+            rationale = "",
+        )
         else -> null
+    }
+
+    private suspend fun spawnTask(argumentsJson: String): ToolResult {
+        val spawner = taskSpawner
+            ?: return ToolResult("spawn-task is not available right now", isError = true)
+        val title = ToolArgs.string(argumentsJson, "title")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return ToolResult("spawn-task requires a title", isError = true)
+        val prompt = ToolArgs.string(argumentsJson, "prompt")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return ToolResult("spawn-task requires a prompt", isError = true)
+        return spawner(title, prompt)
     }
 
     // Result wording follows the CLI's runSaveMemory, adapted to per-message

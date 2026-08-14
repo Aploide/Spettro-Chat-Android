@@ -35,6 +35,14 @@ class ConsentGate(private val prefs: AppPrefs) {
     /** The persisted grants, for the Settings revoke list. */
     val alwaysAllowed: Flow<Set<String>> = prefs.consentAlwaysFlow()
 
+    /**
+     * Whether a persisted "Always allow" covers [consentKey]. Headless runs
+     * (background/scheduled tasks) use this instead of [require]: with nobody
+     * watching there is no card to show, so no standing grant means no.
+     */
+    suspend fun hasStandingGrant(consentKey: String): Boolean =
+        consentKey in prefs.consentAlways()
+
     /** Engine-side: true when the user allowed the call (once or always). */
     suspend fun require(request: ConsentRequest): Boolean {
         if (request.consentKey in prefs.consentAlways()) return true

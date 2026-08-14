@@ -108,6 +108,7 @@ fun ChatRoot(
     var showSkillsSheet by remember { mutableStateOf(false) }
     var showSkillPicker by remember { mutableStateOf(false) }
     var showMemorySheet by remember { mutableStateOf(false) }
+    var showScheduledTasks by remember { mutableStateOf(false) }
 
     // Skills: the active one comes from the conversation (or, before the
     // first message, from the engine's pending pick).
@@ -246,12 +247,21 @@ fun ChatRoot(
             if (!expandedNav) scope.launch { drawerState.close() }
         }
 
+        val backgroundTasks by chatVm.backgroundTasks.collectAsState()
         val sidebar: @Composable () -> Unit = {
             Sidebar(
                 conversations = conversations,
                 activeId = activeId,
                 email = email,
                 plan = plan,
+                tasks = backgroundTasks,
+                onTaskClick = { task ->
+                    task.conversationId?.let {
+                        chatVm.selectChat(it)
+                        closeNav()
+                    }
+                },
+                onTaskDismiss = chatVm::dismissTask,
                 onSelect = {
                     chatVm.selectChat(it)
                     closeNav()
@@ -480,6 +490,12 @@ fun ChatRoot(
         val haptics by appVm.hapticFeedback.collectAsState()
         val autoCompact by appVm.autoCompact.collectAsState()
         val grantedKeys by chatVm.alwaysAllowedConsents.collectAsState(initial = emptySet())
+        // Re-read on open: the tool may have scheduled tasks since, and the
+        // user may have flipped notification access in the OS settings.
+        LaunchedEffect(Unit) { chatVm.refreshScheduledTasks() }
+        val notificationAccess = remember {
+            to.eyed.spettro.chat.data.tools.SpettroNotificationListener.isEnabled(context)
+        }
         SettingsSheet(
             account = account,
             email = email,
@@ -495,6 +511,16 @@ fun ChatRoot(
             onOpenSkills = { showSkillsSheet = true },
             memoryCount = chatVm.memories.collectAsState(initial = emptyList()).value.size,
             onOpenMemory = { showMemorySheet = true },
+            scheduledTaskCount = chatVm.scheduledTasks.collectAsState().value.size,
+            onOpenScheduledTasks = { showScheduledTasks = true },
+            notificationAccessEnabled = notificationAccess,
+            onOpenNotificationAccess = {
+                runCatching {
+                    context.startActivity(
+                        to.eyed.spettro.chat.data.tools.SpettroNotificationListener.settingsIntent(),
+                    )
+                }
+            },
             onSetStreamingAnimations = appVm::setStreamingAnimations,
             onSetHapticFeedback = appVm::setHapticFeedback,
             onSetAutoCompact = appVm::setAutoCompact,
@@ -516,6 +542,15 @@ fun ChatRoot(
                 appVm.signOut()
             },
             onDismiss = { showSettings = false },
+        )
+    }
+
+    if (showScheduledTasks) {
+        val scheduled by chatVm.scheduledTasks.collectAsState()
+        to.eyed.spettro.chat.ui.settings.ScheduledTasksSheet(
+            tasks = scheduled,
+            onCancel = chatVm::cancelScheduledTask,
+            onDismiss = { showScheduledTasks = false },
         )
     }
 
@@ -617,6 +652,12 @@ private fun consentLabel(key: String): String = when (key) {
     "tool:contacts-search" -> "Contacts"
     "tool:set-reminder" -> "Reminders"
     "tool:get-location" -> "Location"
+    "tool:scheduled-tasks" -> "Scheduled tasks"
+    "tool:compose-message" -> "Composing messages"
+    "tool:set-alarm" -> "Alarms & timers"
+    "tool:open-on-phone" -> "Opening apps & links"
+    "tool:media-control" -> "Media control"
+    "tool:read-notifications" -> "Reading notifications"
     else -> if (key.startsWith("mcp:")) "MCP server (${key.removePrefix("mcp:")})" else key
 }
 

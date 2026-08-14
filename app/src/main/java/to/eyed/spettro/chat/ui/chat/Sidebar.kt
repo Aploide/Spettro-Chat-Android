@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import com.composables.icons.lucide.Archive
 import com.composables.icons.lucide.ArchiveRestore
+import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Pin
 import com.composables.icons.lucide.Search
@@ -81,6 +82,10 @@ fun Sidebar(
     activeId: String?,
     email: String,
     plan: String,
+    /** Background agent tasks (spawned and scheduled), newest first. */
+    tasks: List<to.eyed.spettro.chat.engine.AgentTask>,
+    onTaskClick: (to.eyed.spettro.chat.engine.AgentTask) -> Unit,
+    onTaskDismiss: (String) -> Unit,
     onSelect: (String) -> Unit,
     onNewChat: () -> Unit,
     onTogglePin: (String) -> Unit,
@@ -180,6 +185,14 @@ fun Sidebar(
 
         // Thread list
         LazyColumn(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            // Background tasks: what's running (or just finished) while this
+            // chat goes on. Tapping a finished task opens its result chat.
+            if (tasks.isNotEmpty()) {
+                item { GroupHeader("Background tasks") }
+                items(tasks.size, key = { "t-${tasks[it].id}" }) { i ->
+                    TaskRow(tasks[i], onTaskClick, onTaskDismiss)
+                }
+            }
             if (visible.isEmpty()) {
                 item {
                     Text(
@@ -296,6 +309,64 @@ fun Sidebar(
                 )
             }
             Icon(Lucide.Settings, null, Modifier.size(18.dp), tint = Ink.I500)
+        }
+    }
+}
+
+@Composable
+private fun TaskRow(
+    task: to.eyed.spettro.chat.engine.AgentTask,
+    onClick: (to.eyed.spettro.chat.engine.AgentTask) -> Unit,
+    onDismiss: (String) -> Unit,
+) {
+    val running = task.status == to.eyed.spettro.chat.engine.TaskStatus.Running
+    val failed = task.status == to.eyed.spettro.chat.engine.TaskStatus.Failed
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 1.dp)
+            .clip(RoundedCornerShape(Radii.row))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                enabled = task.conversationId != null,
+            ) { onClick(task) }
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (running) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(13.dp),
+                color = Ink.I300,
+                strokeWidth = 1.5.dp,
+            )
+        } else {
+            Icon(
+                if (failed) Lucide.X else Lucide.Check,
+                null,
+                Modifier.size(13.dp),
+                tint = if (failed) Ink.Danger else Ink.I300,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                task.title,
+                fontSize = 14.sp,
+                color = Ink.I100,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                task.statusLine,
+                fontSize = 11.sp,
+                color = if (failed) Ink.Danger else Ink.I500,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (!running) {
+            GhostIconButton(Lucide.X, "Dismiss task", onClick = { onDismiss(task.id) }, size = 28.dp, iconSize = 13.dp)
         }
     }
 }

@@ -11,6 +11,25 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Required by AlarmClock.ACTION_SET_ALARM / ACTION_SET_TIMER (set-alarm tool). -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+
+    <!-- Package visibility for the open-on-phone tool: listing launchable
+         apps by name, and resolving sms/WhatsApp composers. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
 
     <application
         android:name=".SpettroChatApp"
@@ -81,6 +100,19 @@
             android:name=".engine.ChatRunService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Read-only listener behind the read-notifications tool. Inert
+             until the user grants notification access in the OS settings;
+             the in-app consent card still gates every use. -->
+        <service
+            android:name=".data.tools.SpettroNotificationListener"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <!-- Delivers set-reminder alarms as notifications. -->
         <receiver
