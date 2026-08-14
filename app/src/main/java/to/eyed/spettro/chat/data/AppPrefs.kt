@@ -21,6 +21,7 @@ private val Context.dataStore by preferencesDataStore(name = "spettro_chat")
 class AppPrefs(private val context: Context) {
     private object Keys {
         val apiKeyEnc = stringPreferencesKey("api_key_enc")
+        val apiKeyId = stringPreferencesKey("api_key_id")
         val email = stringPreferencesKey("spettro_email")
         val plan = stringPreferencesKey("spettro_plan")
         val planStatus = stringPreferencesKey("spettro_plan_status")
@@ -53,10 +54,16 @@ class AppPrefs(private val context: Context) {
     var apiKey: String? = null
         private set
 
+    /** Server-side id of the current ep_ key, kept so sign-out can revoke it. */
+    @Volatile
+    var apiKeyId: String? = null
+        private set
+
     suspend fun load(): Snapshot {
         val p = context.dataStore.data.first()
         val key = p[Keys.apiKeyEnc]?.let { SecureStore.decrypt(it) }
         apiKey = key
+        apiKeyId = p[Keys.apiKeyId]
         // Cached payloads are best-effort: a parse failure (e.g. after a schema
         // change) just means an empty first paint until the refresh lands.
         val account = p[Keys.accountJson]?.let {
@@ -80,17 +87,23 @@ class AppPrefs(private val context: Context) {
     }
 
     /** Persist the ep_ key immediately — the backend returns it exactly once. */
-    fun saveApiKeyBlocking(key: String) {
+    fun saveApiKeyBlocking(key: String, keyId: String? = null) {
         apiKey = key
+        apiKeyId = keyId
         runBlocking {
-            context.dataStore.edit { it[Keys.apiKeyEnc] = SecureStore.encrypt(key) }
+            context.dataStore.edit {
+                it[Keys.apiKeyEnc] = SecureStore.encrypt(key)
+                if (keyId != null) it[Keys.apiKeyId] = keyId else it.remove(Keys.apiKeyId)
+            }
         }
     }
 
     suspend fun clearApiKeyAndAccount() {
         apiKey = null
+        apiKeyId = null
         context.dataStore.edit {
             it.remove(Keys.apiKeyEnc)
+            it.remove(Keys.apiKeyId)
             it.remove(Keys.email)
             it.remove(Keys.plan)
             it.remove(Keys.planStatus)

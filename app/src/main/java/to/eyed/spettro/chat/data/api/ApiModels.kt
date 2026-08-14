@@ -5,15 +5,13 @@ import kotlinx.serialization.Serializable
 
 // Wire DTOs for api.spettro.app, mirroring the CLI's internal/spettro/client.go.
 
+/** Minted ep_ key from spettro.app/api/keys/generate; the raw key arrives exactly once. */
 @Serializable
-data class InitiateRequest(@SerialName("session_id") val sessionId: String)
-
-@Serializable
-data class InitiateResponse(@SerialName("browser_url") val browserUrl: String = "")
-
-/** Poll status: "pending" | "complete" | "expired". The ep_ key arrives exactly once. */
-@Serializable
-data class PollResponse(val status: String = "", @SerialName("api_key") val apiKey: String = "")
+data class ApiKeyGrant(
+    val key: String = "",
+    val id: String = "",
+    val label: String = "",
+)
 
 @Serializable
 data class ModelInfo(

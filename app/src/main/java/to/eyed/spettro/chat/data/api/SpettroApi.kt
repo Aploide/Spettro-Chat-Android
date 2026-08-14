@@ -21,18 +21,17 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * Client for the Spettro backend, mirroring the CLI:
- *  - POST /auth/initiate       — register a login session, returns a browser URL
- *  - GET  /auth/poll/:session  — poll until the user signs in, returns an ep_ key
+ * Client for the Spettro backend, authenticated with an ep_ API key:
  *  - GET  /v1/models           — models available on the user's plan
  *  - GET  /v1/account          — plan, status, and credit usage
  *  - POST /v1/chat/completions — OpenAI-compatible inference (SSE streaming)
+ *
+ * Sign-in (Clerk + key minting) lives in [SpettroWebApi].
  */
 class SpettroApi(
     private val baseUrl: String = DEFAULT_BASE_URL,
@@ -42,8 +41,6 @@ class SpettroApi(
         const val DEFAULT_BASE_URL = "https://api.spettro.app"
         const val PRICING_URL = "https://spettro.app/pricing"
         const val USER_AGENT = "SpettroChat/1.0 (Android)"
-        const val POLL_INTERVAL_MS = 2_000L
-        const val LOGIN_MAX_WAIT_MS = 10 * 60_000L
         // Backend overflow bucket worst-case refill (6s) + 1s margin.
         const val DEFAULT_RATE_LIMIT_RETRY_S = 7
     }
@@ -60,55 +57,6 @@ class SpettroApi(
     private val streamClient = client.newBuilder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
-
-    // --- Auth (device flow; no Authorization header) ---
-
-    data class LoginSession(val sessionId: String, val browserUrl: String)
-
-    /** The client generates the session id itself (UUIDv4), like the CLI. */
-    suspend fun authInitiate(): LoginSession {
-        val sessionId = UUID.randomUUID().toString()
-        val body = json.encodeToString(InitiateRequest.serializer(), InitiateRequest(sessionId))
-        val req = Request.Builder()
-            .url("$baseUrl/auth/initiate")
-            .header("User-Agent", USER_AGENT)
-            .post(body.toRequestBody(jsonMedia))
-            .build()
-        client.newCall(req).await().use { resp ->
-            if (!resp.isSuccessful) throw ApiException(resp.code, "login could not be started (HTTP ${resp.code})")
-            val out = json.decodeFromString(InitiateResponse.serializer(), resp.body.string())
-            if (out.browserUrl.isBlank()) throw ApiException(resp.code, "server returned no browser URL")
-            return LoginSession(sessionId, out.browserUrl)
-        }
-    }
-
-    sealed interface PollResult {
-        data object Pending : PollResult
-        data class Complete(val apiKey: String) : PollResult
-        data object Expired : PollResult
-    }
-
-    suspend fun authPoll(sessionId: String): PollResult {
-        val req = Request.Builder()
-            .url("$baseUrl/auth/poll/$sessionId")
-            .header("User-Agent", USER_AGENT)
-            .get()
-            .build()
-        client.newCall(req).await().use { resp ->
-            if (resp.code == 404) throw ApiException(404, "login session not found — please try again")
-            if (!resp.isSuccessful) throw ApiException(resp.code, "login check failed (HTTP ${resp.code})")
-            val out = json.decodeFromString(PollResponse.serializer(), resp.body.string())
-            return when (out.status) {
-                "pending" -> PollResult.Pending
-                "expired" -> PollResult.Expired
-                "complete" ->
-                    if (out.apiKey.isNotBlank()) PollResult.Complete(out.apiKey)
-                    // The backend returns the key exactly once; a keyless complete is unrecoverable.
-                    else throw ApiException(resp.code, "login completed but no key was returned — please try again")
-                else -> PollResult.Pending
-            }
-        }
-    }
 
     // --- Authenticated REST ---
 
@@ -353,7 +301,7 @@ class SpettroApi(
 }
 
 /** Bridges OkHttp's callback API into coroutines with proper cancellation. */
-private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
+internal suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
     enqueue(
         object : Callback {
             override fun onResponse(call: Call, response: Response) {

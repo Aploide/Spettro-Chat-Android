@@ -1,10 +1,15 @@
 package to.eyed.spettro.chat.ui.auth
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,37 +22,47 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Sparkles
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.tooling.preview.Preview
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Sparkles
+import to.eyed.spettro.chat.R
 import to.eyed.spettro.chat.ui.components.GlassButton
 import to.eyed.spettro.chat.ui.components.LiquidThinking
-import to.eyed.spettro.chat.ui.components.PrimaryButton
+import to.eyed.spettro.chat.ui.components.snappySpring
 import to.eyed.spettro.chat.ui.components.surfaceLow
 import to.eyed.spettro.chat.ui.theme.Ink
 import to.eyed.spettro.chat.ui.theme.Radii
+import to.eyed.spettro.chat.ui.theme.SpettroChatTheme
+import to.eyed.spettro.chat.vm.AuthProvider
 import to.eyed.spettro.chat.vm.LoginFlow
 
 /**
- * Sign-in screen. The backend uses a browser device flow (no passwords):
- * we register a session, open the returned URL, and poll until complete.
+ * Sign-in screen. Social login (Google/GitHub) runs in-app through Clerk;
+ * after the OAuth redirect the app mints its ep_ API key from spettro.app.
  */
 @Composable
 fun AuthScreen(
     login: LoginFlow,
-    onSignIn: () -> Unit,
+    onSignIn: (AuthProvider) -> Unit,
     onCancel: () -> Unit,
-    onOpenAgain: (String) -> Unit,
 ) {
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(
@@ -73,22 +88,17 @@ fun AuthScreen(
             ) { state ->
                 when (state) {
                     is LoginFlow.Idle -> IdleContent(onSignIn)
-                    is LoginFlow.Starting -> WaitingContent(
-                        title = "Connecting",
-                        subtitle = "Preparing your sign-in link…",
+                    is LoginFlow.Authorizing -> WaitingContent(
+                        title = "Signing in with ${state.provider.label}",
+                        subtitle = "Finish in the browser window — you'll be brought right back.",
                         onCancel = onCancel,
                     )
-                    is LoginFlow.WaitingBrowser -> WaitingContent(
-                        title = "Authenticating",
-                        subtitle = "Finish signing in from your browser. This screen updates automatically.",
-                        onCancel = onCancel,
-                        onOpenAgain = { onOpenAgain(state.browserUrl) },
+                    is LoginFlow.LinkingAccount -> WaitingContent(
+                        title = "Setting up your account",
+                        subtitle = "Linking your Spettro account…",
+                        onCancel = null,
                     )
-                    is LoginFlow.Expired -> ErrorContent(
-                        "The login link expired — please try again.",
-                        onSignIn,
-                    )
-                    is LoginFlow.Error -> ErrorContent(state.message, onSignIn)
+                    is LoginFlow.Error -> ErrorContent(state.message, onCancel)
                 }
             }
         }
@@ -96,7 +106,7 @@ fun AuthScreen(
 }
 
 @Composable
-private fun IdleContent(onSignIn: () -> Unit) {
+private fun IdleContent(onSignIn: (AuthProvider) -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             "Welcome back. Sign in to continue the conversation.",
@@ -106,14 +116,20 @@ private fun IdleContent(onSignIn: () -> Unit) {
             lineHeight = 21.sp,
         )
         Spacer(Modifier.height(32.dp))
-        PrimaryButton(
-            text = "Sign in with browser",
-            onClick = onSignIn,
-            modifier = Modifier.fillMaxWidth(),
+        ProviderButton(
+            text = "Continue with Google",
+            iconRes = R.drawable.ic_google,
+            onClick = { onSignIn(AuthProvider.Google) },
+        )
+        Spacer(Modifier.height(12.dp))
+        ProviderButton(
+            text = "Continue with GitHub",
+            iconRes = R.drawable.ic_github,
+            onClick = { onSignIn(AuthProvider.GitHub) },
         )
         Spacer(Modifier.height(20.dp))
         Text(
-            "A secure sign-in page opens in your browser.\nNo passwords are stored in the app.",
+            "Sign-in happens in a secure browser window.\nNo passwords are stored in the app.",
             color = Ink.I500,
             fontSize = 12.sp,
             lineHeight = 17.sp,
@@ -130,11 +146,48 @@ private fun IdleContent(onSignIn: () -> Unit) {
 }
 
 @Composable
+private fun ProviderButton(
+    text: String,
+    iconRes: Int,
+    onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, snappySpring(), label = "scale")
+    val bg by animateColorAsState(if (pressed) Ink.SurfaceHigh else Ink.SurfaceLow, tween(150), label = "bg")
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(CircleShape)
+            .background(bg)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(vertical = 15.dp, horizontal = 20.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painterResource(iconRes),
+            contentDescription = null,
+            Modifier.size(18.dp),
+            tint = Ink.White,
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text,
+            color = Ink.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
 private fun WaitingContent(
     title: String,
     subtitle: String,
-    onCancel: () -> Unit,
-    onOpenAgain: (() -> Unit)? = null,
+    onCancel: (() -> Unit)?,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(20.dp))
@@ -149,18 +202,15 @@ private fun WaitingContent(
             lineHeight = 18.sp,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(28.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (onOpenAgain != null) {
-                GlassButton("Open browser again", onClick = onOpenAgain)
-            }
+        if (onCancel != null) {
+            Spacer(Modifier.height(28.dp))
             GlassButton("Cancel", onClick = onCancel, textColor = Ink.I300)
         }
     }
 }
 
 @Composable
-private fun ErrorContent(message: String, onRetry: () -> Unit) {
+private fun ErrorContent(message: String, onBack: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             message,
@@ -170,6 +220,30 @@ private fun ErrorContent(message: String, onRetry: () -> Unit) {
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(24.dp))
-        PrimaryButton("Try again", onClick = onRetry, modifier = Modifier.fillMaxWidth())
+        GlassButton("Try again", onClick = onBack)
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF000000)
+@Composable
+private fun AuthScreenPreview() {
+    SpettroChatTheme {
+        AuthScreen(
+            login = LoginFlow.Idle,
+            onSignIn = {},
+            onCancel = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF000000)
+@Composable
+private fun AuthScreenAuthorizingPreview() {
+    SpettroChatTheme {
+        AuthScreen(
+            login = LoginFlow.Authorizing(AuthProvider.Google),
+            onSignIn = {},
+            onCancel = {}
+        )
     }
 }

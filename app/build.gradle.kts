@@ -1,7 +1,26 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+}
+
+// The Clerk publishable key is instance-specific and deliberately kept out of
+// the repository. Provide it via local.properties (spettro.clerk.publishableKey),
+// a Gradle property, or the SPETTRO_CLERK_PUBLISHABLE_KEY environment variable.
+val clerkPublishableKey: String = run {
+    val fromLocal = rootProject.file("local.properties")
+        .takeIf { it.exists() }
+        ?.let { file ->
+            Properties()
+                .apply { file.inputStream().use { load(it) } }
+                .getProperty("spettro.clerk.publishableKey")
+        }
+    (fromLocal
+        ?: providers.gradleProperty("SPETTRO_CLERK_PUBLISHABLE_KEY").orNull
+        ?: System.getenv("SPETTRO_CLERK_PUBLISHABLE_KEY")
+        ?: "").trim()
 }
 
 android {
@@ -16,6 +35,8 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "CLERK_PUBLISHABLE_KEY", "\"$clerkPublishableKey\"")
     }
 
     buildTypes {
@@ -28,8 +49,9 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        // The Clerk SDK requires Java 17.
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
         compose = true
@@ -54,6 +76,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
+    implementation(libs.clerk.android.api)
     implementation(libs.markdown.renderer.m3)
     implementation(libs.icons.lucide)
     testImplementation(libs.junit)

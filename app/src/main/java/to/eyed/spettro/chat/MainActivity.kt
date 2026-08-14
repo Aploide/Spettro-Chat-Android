@@ -50,9 +50,8 @@ class MainActivity : ComponentActivity() {
                             is AuthState.Loading -> Unit // brand-black splash
                             is AuthState.SignedOut -> AuthScreen(
                                 login = state.login,
-                                onSignIn = { appVm.startLogin(::openUrl) },
+                                onSignIn = appVm::signInWith,
                                 onCancel = appVm::cancelLogin,
-                                onOpenAgain = ::openUrl,
                             )
                             is AuthState.SignedIn -> ChatRoot(
                                 appVm = appVm,
