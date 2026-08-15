@@ -23,14 +23,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.Canvas
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import com.composables.icons.lucide.ArrowUp
 import com.composables.icons.lucide.Camera
+import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.FileText
 import com.composables.icons.lucide.Images
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Mic
 import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.Sparkles
 import com.composables.icons.lucide.Square
 import com.composables.icons.lucide.X
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +51,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import to.eyed.spettro.chat.data.store.StoredFile
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -66,8 +73,9 @@ import to.eyed.spettro.chat.ui.theme.Radii
 data class PendingImage(val dataUrl: String, val thumbnail: Bitmap?)
 
 /**
- * The composer: text field on top, controls row below it - attach (+), the
- * model/effort chip that opens the model sheet, and the send/stop button.
+ * The composer: text field on top, controls row below it - attach (+, which
+ * also holds the skills entry), the model/effort chip that opens the model
+ * sheet, and the dictate and send/stop buttons.
  */
 @Composable
 fun InputBar(
@@ -92,6 +100,12 @@ fun InputBar(
     onSend: () -> Unit,
     onStop: () -> Unit,
     isStreaming: Boolean,
+    /** Dictation: while recording the composer becomes the waveform pill. */
+    isRecording: Boolean,
+    voiceLevels: List<Float>,
+    onStartVoice: () -> Unit,
+    onCancelVoice: () -> Unit,
+    onConfirmVoice: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val canvas = MaterialTheme.colorScheme.background
@@ -154,137 +168,146 @@ fun InputBar(
                     .fillMaxWidth()
                     .surfaceRaised(RoundedCornerShape(Radii.card)),
             ) {
-                BasicTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    textStyle = TextStyle(color = Ink.White, fontSize = 16.sp, lineHeight = 22.sp),
-                    cursorBrush = SolidColor(Ink.White),
-                    maxLines = 7,
-                    decorationBox = { inner ->
-                        Box(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                            if (value.isEmpty()) {
-                                Text("Message Spettro…", color = Ink.I500, fontSize = 16.sp)
-                            }
-                            inner()
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp, max = 170.dp),
-                )
-                Row(
-                    Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // Attach menu: camera and photo library on vision models,
-                    // documents everywhere.
-                    var attachMenuOpen by remember { mutableStateOf(false) }
-                    Box {
-                        GhostIconButton(
-                            Lucide.Plus,
-                            "Attach",
-                            onClick = { attachMenuOpen = true },
-                            size = 38.dp,
-                            iconSize = 21.dp,
-                            tint = Ink.I100,
-                        )
-                        DropdownMenu(
-                            expanded = attachMenuOpen,
-                            onDismissRequest = { attachMenuOpen = false },
-                            shape = RoundedCornerShape(Radii.card),
-                            containerColor = Ink.SurfaceHigh,
-                        ) {
-                            if (canAttachImages) {
-                                AttachMenuItem(Lucide.Camera, "Camera") {
-                                    attachMenuOpen = false
-                                    onCapturePhoto()
+                if (isRecording) {
+                    RecordingBar(
+                        levels = voiceLevels,
+                        onCancel = onCancelVoice,
+                        onConfirm = onConfirmVoice,
+                    )
+                } else {
+                    BasicTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        textStyle = TextStyle(color = Ink.White, fontSize = 16.sp, lineHeight = 22.sp),
+                        cursorBrush = SolidColor(Ink.White),
+                        maxLines = 7,
+                        decorationBox = { inner ->
+                            Box(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                                if (value.isEmpty()) {
+                                    Text("Message Spettro…", color = Ink.I500, fontSize = 16.sp)
                                 }
-                                AttachMenuItem(Lucide.Images, "Photos") {
-                                    attachMenuOpen = false
-                                    onPickPhotos()
-                                }
+                                inner()
                             }
-                            AttachMenuItem(Lucide.FileText, "Files") {
-                                attachMenuOpen = false
-                                onPickFiles()
-                            }
-                        }
-                    }
-                    Spacer(Modifier.width(2.dp))
-                    // Model + effort chip, opens the model sheet.
-                    if (modelName != null) {
-                        Row(
-                            Modifier
-                                .clip(CircleShape)
-                                .background(Ink.SurfaceHigh)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = onOpenModelSheet,
-                                )
-                                .padding(horizontal = 12.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                modelName,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Ink.I100,
-                                maxLines = 1,
-                            )
-                            if (effortLabel != null) {
-                                Spacer(Modifier.width(6.dp))
-                                Text(effortLabel, fontSize = 13.sp, color = Ink.I500, maxLines = 1)
-                            }
-                        }
-                    }
-                    // Skill chip: shows the active skill; X clears it, tap picks another.
-                    Spacer(Modifier.width(6.dp))
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp, max = 170.dp),
+                    )
                     Row(
-                        Modifier
-                            .clip(CircleShape)
-                            .background(Ink.SurfaceHigh)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = onOpenSkillPicker,
-                            )
-                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                        Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (skillChip == null) {
-                            Text("Skills", fontSize = 13.sp, color = Ink.I500, maxLines = 1)
-                        } else {
-                            Text(
-                                "${skillChip.first} ${skillChip.second}",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Ink.I100,
-                                maxLines = 1,
+                        // Attach menu: camera and photo library on vision models,
+                        // documents everywhere.
+                        var attachMenuOpen by remember { mutableStateOf(false) }
+                        Box {
+                            GhostIconButton(
+                                Lucide.Plus,
+                                "Attach",
+                                onClick = { attachMenuOpen = true },
+                                size = 38.dp,
+                                iconSize = 21.dp,
+                                tint = Ink.I100,
                             )
-                            Spacer(Modifier.width(6.dp))
-                            Box(
-                                Modifier
-                                    .size(16.dp)
-                                    .clip(CircleShape)
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null,
-                                        onClick = onClearSkill,
-                                    ),
-                                contentAlignment = Alignment.Center,
+                            // Active-skill cue: the skill's emoji badges the +
+                            // button, since the chip no longer sits in the row.
+                            if (skillChip != null) {
+                                Box(
+                                    Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(17.dp)
+                                        .clip(CircleShape)
+                                        .background(Ink.SurfaceHigh),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(skillChip.first, fontSize = 9.sp, maxLines = 1)
+                                }
+                            }
+                            DropdownMenu(
+                                expanded = attachMenuOpen,
+                                onDismissRequest = { attachMenuOpen = false },
+                                shape = RoundedCornerShape(Radii.card),
+                                containerColor = Ink.SurfaceHigh,
                             ) {
-                                Icon(Lucide.X, "Clear skill", Modifier.size(12.dp), tint = Ink.I500)
+                                if (canAttachImages) {
+                                    AttachMenuItem(Lucide.Camera, "Camera") {
+                                        attachMenuOpen = false
+                                        onCapturePhoto()
+                                    }
+                                    AttachMenuItem(Lucide.Images, "Photos") {
+                                        attachMenuOpen = false
+                                        onPickPhotos()
+                                    }
+                                }
+                                AttachMenuItem(Lucide.FileText, "Files") {
+                                    attachMenuOpen = false
+                                    onPickFiles()
+                                }
+                                // Skills live in this menu (not as a row chip)
+                                // so a long skill name can't shift the layout.
+                                SkillMenuItem(
+                                    skillChip = skillChip,
+                                    onOpen = {
+                                        attachMenuOpen = false
+                                        onOpenSkillPicker()
+                                    },
+                                    onClear = {
+                                        attachMenuOpen = false
+                                        onClearSkill()
+                                    },
+                                )
                             }
                         }
+                        Spacer(Modifier.width(2.dp))
+                        // Model + effort chip, opens the model sheet. The row's
+                        // only flexible element: it truncates under pressure so
+                        // the buttons around it never compress.
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                            if (modelName != null) {
+                                Row(
+                                    Modifier
+                                        .clip(CircleShape)
+                                        .background(Ink.SurfaceHigh)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                            onClick = onOpenModelSheet,
+                                        )
+                                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        modelName,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Ink.I100,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false),
+                                    )
+                                    if (effortLabel != null) {
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(effortLabel, fontSize = 13.sp, color = Ink.I500, maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+                        GhostIconButton(
+                            Lucide.Mic,
+                            "Dictate",
+                            onClick = onStartVoice,
+                            size = 38.dp,
+                            iconSize = 19.dp,
+                            tint = Ink.I100,
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        SendButton(
+                            hasContent = value.isNotBlank() || attachments.isNotEmpty() || files.isNotEmpty(),
+                            isStreaming = isStreaming,
+                            onSend = onSend,
+                            onStop = onStop,
+                        )
                     }
-                    Spacer(Modifier.weight(1f))
-                    SendButton(
-                        hasContent = value.isNotBlank() || attachments.isNotEmpty() || files.isNotEmpty(),
-                        isStreaming = isStreaming,
-                        onSend = onSend,
-                        onStop = onStop,
-                    )
                 }
             }
         }
@@ -308,6 +331,63 @@ private fun AttachMenuItem(icon: ImageVector, label: String, onClick: () -> Unit
         Icon(icon, contentDescription = null, Modifier.size(17.dp), tint = Ink.I100)
         Spacer(Modifier.width(12.dp))
         Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Ink.White)
+    }
+}
+
+/**
+ * The skills entry of the attach menu: the active skill (emoji + name, with
+ * an inline clear), or a plain "Skills" opener when none is applied.
+ */
+@Composable
+private fun SkillMenuItem(
+    skillChip: Pair<String, String>?,
+    onOpen: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Row(
+        Modifier
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onOpen,
+            )
+            .padding(horizontal = 16.dp, vertical = 11.dp)
+            .widthIn(min = 132.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (skillChip == null) {
+            Icon(Lucide.Sparkles, contentDescription = null, Modifier.size(17.dp), tint = Ink.I100)
+        } else {
+            Box(Modifier.width(17.dp), contentAlignment = Alignment.Center) {
+                Text(skillChip.first, fontSize = 13.sp)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            skillChip?.second ?: "Skills",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = Ink.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 168.dp),
+        )
+        if (skillChip != null) {
+            Spacer(Modifier.width(10.dp))
+            Box(
+                Modifier
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onClear,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Lucide.X, "Clear skill", Modifier.size(12.dp), tint = Ink.I500)
+            }
+        }
     }
 }
 
@@ -379,5 +459,83 @@ private fun SendButton(
             Modifier.size(18.dp),
             tint = if (active) Ink.Pitch else Ink.I500,
         )
+    }
+}
+
+/**
+ * The dictation pill that replaces the composer while recording: cancel on
+ * the left, the live waveform in the middle, confirm on the right.
+ */
+@Composable
+private fun RecordingBar(
+    levels: List<Float>,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(Ink.SurfaceHigh)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onCancel,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Lucide.X, "Cancel dictation", Modifier.size(17.dp), tint = Ink.I100)
+        }
+        Waveform(
+            levels = levels,
+            modifier = Modifier
+                .weight(1f)
+                .height(38.dp)
+                .padding(horizontal = 14.dp),
+        )
+        Box(
+            Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(Ink.White)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onConfirm,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Lucide.Check, "Insert transcription", Modifier.size(18.dp), tint = Ink.Pitch)
+        }
+    }
+}
+
+/**
+ * Rolling mic-level bars, newest at the right edge; slots without a sample
+ * yet render at the resting height so the pill reads full-width from the
+ * first frame.
+ */
+@Composable
+private fun Waveform(levels: List<Float>, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val barW = 3.dp.toPx()
+        val gap = 3.dp.toPx()
+        val count = ((size.width + gap) / (barW + gap)).toInt().coerceAtLeast(1)
+        val shown = levels.takeLast(count)
+        val corner = CornerRadius(barW / 2f)
+        for (i in 0 until count) {
+            val level = shown.getOrNull(i - (count - shown.size)) ?: 0.05f
+            val h = (size.height * level).coerceAtLeast(barW)
+            drawRoundRect(
+                color = Ink.White,
+                topLeft = Offset(i * (barW + gap), (size.height - h) / 2f),
+                size = Size(barW, h),
+                cornerRadius = corner,
+            )
+        }
     }
 }

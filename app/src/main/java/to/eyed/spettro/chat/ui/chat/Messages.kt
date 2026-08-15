@@ -46,6 +46,8 @@ import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.FileText
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.RefreshCw
+import com.composables.icons.lucide.Square
+import com.composables.icons.lucide.Volume2
 import to.eyed.spettro.chat.data.ImageUtil
 import to.eyed.spettro.chat.data.store.StoredMessage
 import to.eyed.spettro.chat.data.tools.AskAnswer
@@ -72,6 +74,9 @@ fun MessagesList(
     onSubmitAnswers: (List<AskAnswer>) -> Unit,
     onDeclineQuestions: () -> Unit,
     onConsentDecision: (to.eyed.spettro.chat.engine.ConsentDecision) -> Unit,
+    /** Read-aloud: key of the message being spoken, and the toggle for it. */
+    speakingKey: String? = null,
+    onToggleSpeak: (key: String, text: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     if (messages.isEmpty() && stream is StreamState.Idle) {
@@ -146,6 +151,7 @@ fun MessagesList(
                 if (msg.role == "user") {
                     UserBubble(msg, maxBubbleWidth = bubbleMax)
                 } else {
+                    val speakKey = "$i-${msg.at}"
                     AssistantMessage(
                         text = msg.content,
                         reasoning = msg.thinking,
@@ -155,9 +161,12 @@ fun MessagesList(
                             }
                         },
                         streaming = false,
-                        showActions = isLast && stream is StreamState.Idle,
+                        showActions = stream is StreamState.Idle,
+                        showRegenerate = isLast,
                         onRegenerate = onRegenerate,
                         onInspectTool = { inspectedTool = it },
+                        isSpeaking = speakingKey == speakKey,
+                        onToggleSpeak = { onToggleSpeak(speakKey, msg.content) },
                     )
                 }
             }
@@ -234,8 +243,11 @@ private fun AssistantMessage(
     streaming: Boolean,
     showActions: Boolean,
     onRegenerate: () -> Unit,
+    showRegenerate: Boolean = true,
     animations: Boolean = true,
     onInspectTool: (ToolRunUi) -> Unit = {},
+    isSpeaking: Boolean = false,
+    onToggleSpeak: () -> Unit = {},
 ) {
     val context = LocalContext.current
     Column(Modifier.fillMaxWidth()) {
@@ -268,13 +280,23 @@ private fun AssistantMessage(
                     tint = Ink.I500,
                 )
                 GhostIconButton(
-                    Lucide.RefreshCw,
-                    "Regenerate",
-                    onClick = onRegenerate,
+                    if (isSpeaking) Lucide.Square else Lucide.Volume2,
+                    if (isSpeaking) "Stop reading" else "Read aloud",
+                    onClick = onToggleSpeak,
                     size = 32.dp,
                     iconSize = 15.dp,
-                    tint = Ink.I500,
+                    tint = if (isSpeaking) Ink.White else Ink.I500,
                 )
+                if (showRegenerate) {
+                    GhostIconButton(
+                        Lucide.RefreshCw,
+                        "Regenerate",
+                        onClick = onRegenerate,
+                        size = 32.dp,
+                        iconSize = 15.dp,
+                        tint = Ink.I500,
+                    )
+                }
             }
         }
     }

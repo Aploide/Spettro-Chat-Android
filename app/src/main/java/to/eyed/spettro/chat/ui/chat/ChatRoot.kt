@@ -51,6 +51,8 @@ import androidx.core.net.toUri
 import kotlinx.coroutines.launch
 import to.eyed.spettro.chat.data.DocumentUtil
 import to.eyed.spettro.chat.data.ImageUtil
+import to.eyed.spettro.chat.data.SpeechTranscriber
+import to.eyed.spettro.chat.data.TtsSpeaker
 import to.eyed.spettro.chat.data.api.SpettroApi
 import to.eyed.spettro.chat.data.store.StoredFile
 import to.eyed.spettro.chat.ui.components.surfaceCard
@@ -210,6 +212,62 @@ fun ChatRoot(
         scope.launch { uris.take(3).forEach { attachFile(it) } }
     }
 
+    // Composer dictation: the transcriber accumulates speech while the
+    // composer shows the waveform pill; confirming appends the transcript
+    // after whatever is already typed.
+    val transcriber = remember { SpeechTranscriber(context.applicationContext) }
+    // Read-aloud for assistant messages, on the platform TTS service.
+    val ttsSpeaker = remember { TtsSpeaker(context.applicationContext) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            transcriber.destroy()
+            ttsSpeaker.release()
+        }
+    }
+    val speakingKey by ttsSpeaker.speakingKey.collectAsState()
+    val ttsError by ttsSpeaker.error.collectAsState()
+    LaunchedEffect(ttsError) {
+        ttsError?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            ttsSpeaker.consumeError()
+        }
+    }
+    // Switching conversations shouldn't keep the old one talking.
+    LaunchedEffect(activeId) { ttsSpeaker.stop() }
+    val voice by transcriber.state.collectAsState()
+    LaunchedEffect(voice.result) {
+        voice.result?.let { text ->
+            input = if (input.isBlank()) text else input.trimEnd() + " " + text
+            transcriber.consumeResult()
+        }
+    }
+    LaunchedEffect(voice.error) {
+        voice.error?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            transcriber.consumeError()
+        }
+    }
+    val micPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) transcriber.start()
+        else android.widget.Toast.makeText(
+            context,
+            "Microphone permission is needed to dictate.",
+            android.widget.Toast.LENGTH_LONG,
+        ).show()
+    }
+    val startDictation: () -> Unit = {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.RECORD_AUDIO,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            transcriber.start()
+        } else {
+            micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
     // Content shared in from other apps: prefill a fresh chat with it.
     val sharedPayload by chatVm.sharedPayload.collectAsState()
     LaunchedEffect(sharedPayload) {
@@ -312,6 +370,8 @@ fun ChatRoot(
                         onSubmitAnswers = chatVm::submitAnswers,
                         onDeclineQuestions = chatVm::declineQuestions,
                         onConsentDecision = chatVm::resolveConsent,
+                        speakingKey = speakingKey,
+                        onToggleSpeak = ttsSpeaker::toggle,
                         modifier = Modifier.fillMaxSize(),
                     )
                     // Near the model's context ceiling the composer is replaced
@@ -414,6 +474,11 @@ fun ChatRoot(
                                         stream is StreamState.Streaming ||
                                         stream is StreamState.RateLimited ||
                                         stream is StreamState.Compacting,
+                                    isRecording = voice.active,
+                                    voiceLevels = voice.levels,
+                                    onStartVoice = startDictation,
+                                    onCancelVoice = transcriber::cancel,
+                                    onConfirmVoice = transcriber::finish,
                                 )
                             }
                         }
