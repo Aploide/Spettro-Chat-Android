@@ -91,9 +91,6 @@ dependencies {
     // Sandboxed JS engine behind the run-javascript tool: pure JVM, no native
     // libs, interpreted mode only on Android (no runtime bytecode generation).
     implementation(libs.rhino)
-    // On-device text embeddings behind semantic recall; the model file itself
-    // is downloaded on demand, not bundled.
-    implementation(libs.mediapipe.tasks.text)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

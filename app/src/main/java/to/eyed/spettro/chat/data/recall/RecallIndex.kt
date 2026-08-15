@@ -56,9 +56,8 @@ class RecallIndex(
         /** Per-call cap so one indexing pass never runs away. */
         private const val MAX_EMBED_BATCH = 512
 
-        /** Similarity floor below which a hit is noise, per embedder. */
-        private const val MIN_SCORE_USE = 0.30
-        private const val MIN_SCORE_HASH = 0.12
+        /** Similarity floor below which a hit is noise. */
+        private const val MIN_SCORE = 0.12
 
         /** At most this many hits from the same conversation. */
         private const val PER_CONVERSATION_CAP = 2
@@ -91,8 +90,8 @@ class RecallIndex(
     suspend fun ensureIndexed() {
         indexMutex.withLock {
             val modelId = embeddings.modelId()
-            // A better embedder appeared (or the model file vanished):
-            // vectors from other embedders are not comparable — rebuild them.
+            // The embedding scheme changed: vectors from other schemes are
+            // not comparable — rebuild them.
             if (dao.countNotFromModel(modelId) > 0) dao.deleteNotFromModel(modelId)
 
             val wanted = LinkedHashMap<String, EmbeddingEntity>() // ownerKey → row-to-be, vector empty
@@ -145,7 +144,6 @@ class RecallIndex(
         val modelId = embeddings.modelId()
         val qv = embeddings.embed(query)
         val qTokens = query.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length > 2 }.toSet()
-        val minScore = if (modelId == EmbeddingService.USE_MODEL_ID) MIN_SCORE_USE else MIN_SCORE_HASH
         val activeId = activeConversationProvider()
         val titles = conversations.loadAll().associate { it.id to it.displayTitle }
 
@@ -175,7 +173,7 @@ class RecallIndex(
                     score = score,
                 )
             }
-            .filter { it.score >= minScore }
+            .filter { it.score >= MIN_SCORE }
             .sortedByDescending { it.score }
             .toList()
 

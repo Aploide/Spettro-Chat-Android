@@ -39,7 +39,7 @@ system prompt. A fact saved mid-turn is therefore in context from the next messa
 Facts are injected most-recently-used first, under an 8 KB cap. When memory exceeds the cap,
 the stalest facts are the ones dropped.
 
-## Semantic recall
+## Recall
 
 The 8 KB injection above is what the model *always* sees. Everything else — the full text of
 past conversations, and memory facts that fell off the cap — is reachable on demand through
@@ -51,15 +51,10 @@ the `search-history` tool, backed by an on-device embedding index (`data/recall/
   indexing is an incremental set difference: deleting a chat drops its rows, compaction
   replaces them, unchanged chunks cost nothing. The index catches up in the background at
   startup and after every finished turn, and always right before a search.
-- **Two embedders.** Out of the box, a dependency-free hashed-feature embedder (word
-  unigrams + character trigrams, 256 dims) gives lexical matching. Under **Settings →
-  Connectors → Semantic recall** the user can download MediaPipe's Universal Sentence
-  Encoder Lite (~6 MB, runs via TFLite); once present, all vectors are transparently rebuilt
-  with it and matching becomes genuinely semantic. Vectors are stamped with the embedder id,
-  so the two are never compared against each other. The MediaPipe runtime ships 16 KB
-  page-size-aligned native libs (verified on every version bump — a Play requirement); if
-  the runtime ever fails to load on a device, the app falls back to the hash embedder
-  automatically and the index self-heals to the working embedder on the next catch-up.
+- **The embedder.** A dependency-free hashed-feature embedder (word unigrams + character
+  trigrams, 256 dims) gives lexical matching — no ML runtime, no model download, nothing
+  native to crash. Vectors are stamped with the embedder id, so if the scheme ever changes
+  the index rebuilds itself on the next catch-up.
 - **Search** embeds the query, brute-forces cosine over the index (phone-scale corpora need
   no ANN structure), adds a small keyword-overlap bonus, caps hits at two per conversation,
   and excludes the active chat — its content is already in context. Hits return as snippets

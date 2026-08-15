@@ -34,11 +34,6 @@ resolved set for a given build is available from `./gradlew :app:dependencies`.
 | JSpecify | The JSpecify Authors |
 | [multiplatform-markdown-renderer](https://github.com/mikepenz/multiplatform-markdown-renderer) | Mike Penz |
 | [PdfBox-Android](https://github.com/TomRoush/PdfBox-Android) (`com.tom-roush:pdfbox-android`), a port of Apache PDFBox | Tom Roush; The Apache Software Foundation |
-| [MediaPipe Tasks](https://github.com/google-ai-edge/mediapipe) (`com.google.mediapipe:tasks-text`), including its bundled TensorFlow Lite runtime and protobuf | Google LLC |
-
-The Universal Sentence Encoder model file that `tasks-text` runs is **not** bundled; it is
-downloaded on demand from Google's model hosting (Apache License 2.0, © Google LLC) only
-when the user enables enhanced semantic recall in Settings.
 
 ## Mozilla Public License 2.0
 

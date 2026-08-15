@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
+import androidx.core.graphics.scale
 
 /**
  * Image attachment processing: downscale to a sane long edge and re-encode
@@ -35,11 +36,9 @@ object ImageUtil {
             val longest = maxOf(bmp.width, bmp.height)
             if (longest > MAX_EDGE) {
                 val scale = MAX_EDGE.toFloat() / longest
-                bmp = Bitmap.createScaledBitmap(
-                    bmp,
+                bmp = bmp.scale(
                     (bmp.width * scale).toInt().coerceAtLeast(1),
                     (bmp.height * scale).toInt().coerceAtLeast(1),
-                    true,
                 )
             }
             val out = ByteArrayOutputStream()

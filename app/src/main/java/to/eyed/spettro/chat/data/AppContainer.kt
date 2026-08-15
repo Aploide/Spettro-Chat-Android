@@ -2,7 +2,6 @@ package to.eyed.spettro.chat.data
 
 import android.content.Context
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.filterNot
 import to.eyed.spettro.chat.data.api.SpettroApi
 import to.eyed.spettro.chat.data.api.SpettroWebApi
 import to.eyed.spettro.chat.data.mcp.McpRegistry
@@ -86,9 +85,6 @@ class AppContainer(context: Context) {
         // so search-history rarely has embedding work left to do inline.
         recall.scheduleCatchUp(delayMs = 8_000)
         recall.bindTo(engine.events)
-        // When a model download finishes, hash-embedded vectors are rebuilt
-        // with it right away instead of waiting for the next turn.
-        recall.bindTo(embeddings.downloading.filterNot { it })
         taskManager.appVisibleProvider = { engine.appVisible }
         // Finished tasks write their result chat straight to the store; the
         // engine re-reads so it appears in the sidebar without a restart.

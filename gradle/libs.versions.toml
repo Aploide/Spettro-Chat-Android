@@ -21,7 +21,6 @@ work = "2.11.2"
 rhino = "1.9.1"
 # 0.10.26+ ships 16 KB page-size-aligned native libs (verified with readelf
 # on every bump — this is a Play requirement, do not downgrade past it).
-mediapipeTasksText = "1.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -55,7 +54,6 @@ icons-lucide = { group = "com.composables", name = "icons-lucide", version = "1.
 clerk-android-api = { group = "com.clerk", name = "clerk-android-api", version.ref = "clerk" }
 pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfbox" }
 rhino = { group = "org.mozilla", name = "rhino", version.ref = "rhino" }
-mediapipe-tasks-text = { group = "com.google.mediapipe", name = "tasks-text", version.ref = "mediapipeTasksText" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
