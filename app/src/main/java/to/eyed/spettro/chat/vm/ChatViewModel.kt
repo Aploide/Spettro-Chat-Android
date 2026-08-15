@@ -28,6 +28,8 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     val conversations: StateFlow<List<Conversation>> get() = engine.conversations
     val activeId: StateFlow<String?> get() = engine.activeId
     val stream: StateFlow<StreamState> get() = engine.stream
+    /** Per-conversation run states, for the sidebar's activity indicators. */
+    val streams: StateFlow<Map<String, StreamState>> get() = engine.streams
     val askForm: StateFlow<AskForm?> get() = engine.askForm
     val tempChat: StateFlow<Conversation?> get() = engine.tempChat
     val isTemporary: StateFlow<Boolean> get() = engine.isTemporary

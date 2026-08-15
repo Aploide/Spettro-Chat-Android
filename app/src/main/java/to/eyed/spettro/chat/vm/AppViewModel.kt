@@ -15,7 +15,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import to.eyed.spettro.chat.SpettroChatApp
 import to.eyed.spettro.chat.data.AppContainer
 import to.eyed.spettro.chat.data.api.Account
@@ -160,6 +162,20 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             }
             _authState.value = AuthState.SignedOut(LoginFlow.Authorizing(provider))
 
+            // Clerk.initialize (app start) runs a network handshake that may
+            // still be in flight — or may have failed on a flaky connection —
+            // by the time the user taps sign-in. Starting OAuth then fails
+            // with the SDK's opaque "Error occurred with unknown message.",
+            // so wait for it here, retrying a failed initialization first.
+            if (!ensureClerkReady()) {
+                _authState.value = AuthState.SignedOut(
+                    LoginFlow.Error(
+                        "Couldn't reach the sign-in service. Check your connection and try again.",
+                    ),
+                )
+                return@launch
+            }
+
             // A previous run may have completed the Clerk session without ever
             // minting a key (e.g. the exchange failed); reuse it if it's alive.
             if (sessionToken() != null) {
@@ -184,15 +200,45 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 is ClerkResult.Failure -> {
                     val message = result.errorMessage
-                    // The user closing the browser tab is not an error.
-                    if (message.contains("cancel", ignoreCase = true)) {
+                    // The user closing the browser tab is not an error. The
+                    // SDK signals it via the throwable, never the message —
+                    // without this check a dismissed tab shows a scary
+                    // "unknown error" instead of returning to the buttons.
+                    if (result.throwable is com.clerk.api.sso.SSOCancellationException ||
+                        message.contains("cancel", ignoreCase = true)
+                    ) {
                         _authState.value = AuthState.SignedOut()
                     } else {
-                        _authState.value = AuthState.SignedOut(LoginFlow.Error(message))
+                        // The SDK's placeholder message hides the real cause
+                        // (it means the failure carried a throwable, not an
+                        // API error) — surface the underlying detail instead.
+                        val shown = if (message.contains("unknown message", ignoreCase = true)) {
+                            val detail = result.throwable?.let {
+                                it.message ?: it.javaClass.simpleName
+                            }
+                            "Sign-in failed" +
+                                (detail?.let { " ($it)" } ?: "") +
+                                ". Please try again."
+                        } else {
+                            message
+                        }
+                        _authState.value = AuthState.SignedOut(LoginFlow.Error(shown))
                     }
                 }
             }
         }
+    }
+
+    /**
+     * True once the Clerk SDK finished its startup handshake. A failed
+     * initialization is retried once; a slow one is awaited (bounded).
+     */
+    private suspend fun ensureClerkReady(): Boolean {
+        if (Clerk.isInitialized.value) return true
+        if (Clerk.initializationError.value != null) {
+            runCatching { Clerk.reinitialize() }
+        }
+        return withTimeoutOrNull(15_000) { Clerk.isInitialized.first { it } } != null
     }
 
     private suspend fun sessionToken(): String? =
