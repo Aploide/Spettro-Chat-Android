@@ -62,13 +62,19 @@ class ChatRunService : Service() {
 
         val container = AppContainer.get(applicationContext)
         scope.launch {
-            engine.stream.collect { state ->
-                val label = when (state) {
-                    is StreamState.Thinking -> genericToolLabel(container, state.tools) ?: "Thinking…"
-                    is StreamState.Streaming -> genericToolLabel(container, state.tools) ?: "Writing the answer…"
-                    is StreamState.RateLimited -> "Waiting out a rate limit…"
-                    is StreamState.Compacting -> "Compacting the conversation…"
-                    else -> null
+            engine.streams.collect { runs ->
+                // Several chats can stream at once; the notification narrates
+                // the busiest view of them.
+                val states = runs.values.filter { it !is StreamState.Error }
+                val label = when {
+                    states.size > 1 -> "Working on ${states.size} chats…"
+                    else -> when (val state = states.firstOrNull()) {
+                        is StreamState.Thinking -> genericToolLabel(container, state.tools) ?: "Thinking…"
+                        is StreamState.Streaming -> genericToolLabel(container, state.tools) ?: "Writing the answer…"
+                        is StreamState.RateLimited -> "Waiting out a rate limit…"
+                        is StreamState.Compacting -> "Compacting the conversation…"
+                        else -> null
+                    }
                 }
                 val now = System.currentTimeMillis()
                 if (label != null && now - lastNotify >= NOTIFY_INTERVAL_MS) {
@@ -190,7 +196,7 @@ class ChatRunService : Service() {
     /** Android 15+ enforces a daily budget on dataSync time; wind down cleanly. */
     override fun onTimeout(startId: Int, fgsType: Int) {
         val engine = AppContainer.get(applicationContext).engine
-        engine.stopStreaming() // persists any partial answer
+        engine.stopAll() // persists any partial answers
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

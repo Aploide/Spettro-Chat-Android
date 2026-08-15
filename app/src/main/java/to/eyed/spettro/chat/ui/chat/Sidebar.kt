@@ -80,6 +80,8 @@ private fun groupLabel(updatedAt: Long): String {
 fun Sidebar(
     conversations: List<Conversation>,
     activeId: String?,
+    /** Conversations with a turn currently running, shown with a spinner. */
+    streamingIds: Set<String>,
     email: String,
     plan: String,
     /** Background agent tasks (spawned and scheduled), newest first. */
@@ -206,14 +208,14 @@ fun Sidebar(
             if (pinned.isNotEmpty()) {
                 item { GroupHeader("Pinned") }
                 items(pinned.size, key = { "p-${pinned[it].id}" }) { i ->
-                    ThreadRow(pinned[i], pinned[i].id == activeId, onSelect, onTogglePin, onArchive)
+                    ThreadRow(pinned[i], pinned[i].id == activeId, pinned[i].id in streamingIds, onSelect, onTogglePin, onArchive)
                 }
             }
             for (label in groupOrder) {
                 val list = groups[label] ?: continue
                 item { GroupHeader(label) }
                 items(list.size, key = { "g-${list[it].id}" }) { i ->
-                    ThreadRow(list[i], list[i].id == activeId, onSelect, onTogglePin, onArchive)
+                    ThreadRow(list[i], list[i].id == activeId, list[i].id in streamingIds, onSelect, onTogglePin, onArchive)
                 }
             }
             // Archived
@@ -387,6 +389,7 @@ private fun GroupHeader(label: String) {
 private fun ThreadRow(
     conv: Conversation,
     active: Boolean,
+    busy: Boolean,
     onSelect: (String) -> Unit,
     onTogglePin: (String) -> Unit,
     onArchive: (String) -> Unit,
@@ -420,6 +423,14 @@ private fun ThreadRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+            if (busy) {
+                Spacer(Modifier.width(8.dp))
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(13.dp),
+                    color = Ink.I300,
+                    strokeWidth = 1.5.dp,
+                )
+            }
         }
         GlassMenu(visible = menuOpen, onDismiss = { menuOpen = false }, header = null) {
             MenuActionRow(Lucide.Pin, if (conv.pinned) "Unpin" else "Pin") {

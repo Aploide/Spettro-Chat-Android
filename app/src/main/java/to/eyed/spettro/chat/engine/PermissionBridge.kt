@@ -7,6 +7,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** A runtime-permission request the engine is waiting on. */
 data class PermissionRequest(val permissions: List<String>, val rationale: String)
@@ -27,16 +29,19 @@ class PermissionBridge(private val appContext: Context) {
     fun granted(permission: String): Boolean =
         ContextCompat.checkSelfPermission(appContext, permission) == PackageManager.PERMISSION_GRANTED
 
+    /** Concurrent chats may ask at once; dialogs are fired one at a time. */
+    private val mutex = Mutex()
+
     /** Engine-side: true when every permission is (or becomes) granted. */
-    suspend fun ensure(permissions: List<String>, rationale: String): Boolean {
+    suspend fun ensure(permissions: List<String>, rationale: String): Boolean = mutex.withLock {
         val missing = permissions.filter { !granted(it) }
-        if (missing.isEmpty()) return true
+        if (missing.isEmpty()) return@withLock true
         val deferred = CompletableDeferred<Map<String, Boolean>>()
         reply = deferred
         _pending.value = PermissionRequest(missing, rationale)
         try {
             val result = deferred.await()
-            return missing.all { result[it] == true || granted(it) }
+            missing.all { result[it] == true || granted(it) }
         } finally {
             _pending.value = null
             reply = null

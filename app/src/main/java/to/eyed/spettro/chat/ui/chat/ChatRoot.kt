@@ -307,10 +307,15 @@ fun ChatRoot(
         }
 
         val backgroundTasks by chatVm.backgroundTasks.collectAsState()
+        val allStreams by chatVm.streams.collectAsState()
+        val streamingIds = remember(allStreams) {
+            allStreams.filterValues { it !is StreamState.Error }.keys
+        }
         val sidebar: @Composable () -> Unit = {
             Sidebar(
                 conversations = conversations,
                 activeId = activeId,
+                streamingIds = streamingIds,
                 email = email,
                 plan = plan,
                 tasks = backgroundTasks,

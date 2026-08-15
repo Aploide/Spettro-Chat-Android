@@ -11,9 +11,12 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import to.eyed.spettro.chat.data.api.ChatEvent
 import to.eyed.spettro.chat.data.api.ModelInfo
@@ -78,13 +81,35 @@ class ChatEngine(
     private val _activeId = MutableStateFlow<String?>(null)
     val activeId: StateFlow<String?> = _activeId.asStateFlow()
 
-    private val _stream = MutableStateFlow<StreamState>(StreamState.Idle)
-    val stream: StateFlow<StreamState> = _stream.asStateFlow()
+    /**
+     * Live state of every running (or errored) turn, keyed by conversation
+     * id. Chats run independently: starting or switching to another chat
+     * never touches the runs already in flight. Idle chats carry no entry.
+     */
+    private val _streams = MutableStateFlow<Map<String, StreamState>>(emptyMap())
+    val streams: StateFlow<Map<String, StreamState>> = _streams.asStateFlow()
 
-    /** Non-null while an ask-user form is on screen waiting for the user. */
-    private val _askForm = MutableStateFlow<AskForm?>(null)
-    val askForm: StateFlow<AskForm?> = _askForm.asStateFlow()
-    private var askReply: CompletableDeferred<List<AskAnswer>?>? = null
+    /**
+     * Pre-flight failures (e.g. "no models enabled") raised before a
+     * conversation exists to attach them to; shown while no chat is active.
+     */
+    private val _draftState = MutableStateFlow<StreamState>(StreamState.Idle)
+
+    /** The active conversation's stream state — what the open chat shows. */
+    val stream: StateFlow<StreamState> =
+        combine(_activeId, _streams, _draftState) { id, map, draft ->
+            if (id == null) draft else map[id] ?: StreamState.Idle
+        }.stateIn(scope, SharingStarted.Eagerly, StreamState.Idle)
+
+    /** The active conversation's pending ask-user form, if any. */
+    private val _askForms = MutableStateFlow<Map<String, AskForm>>(emptyMap())
+    val askForm: StateFlow<AskForm?> =
+        combine(_activeId, _askForms) { id, map -> id?.let { map[it] } }
+            .stateIn(scope, SharingStarted.Eagerly, null)
+    private val askReplies = mutableMapOf<String, CompletableDeferred<List<AskAnswer>?>>()
+
+    /** One running turn per conversation. */
+    private val jobs = mutableMapOf<String, Job>()
 
     /**
      * A temporary chat lives only in memory: never written to the store,
@@ -116,8 +141,6 @@ class ChatEngine(
      */
     private val _pendingSkillId = MutableStateFlow<String?>(null)
     val pendingSkillId: StateFlow<String?> = _pendingSkillId.asStateFlow()
-
-    private var sendJob: Job? = null
 
     val activeConversation: Conversation?
         get() = _tempChat.value?.takeIf { it.id == _activeId.value }
@@ -191,15 +214,15 @@ class ChatEngine(
     }
 
     fun newChat() {
-        stopStreaming()
         discardTemp()
+        _draftState.value = StreamState.Idle
         _activeId.value = null
         _pendingSkillId.value = null
     }
 
     fun selectChat(id: String) {
-        stopStreaming()
         discardTemp()
+        _draftState.value = StreamState.Idle
         _activeId.value = id
         _pendingSkillId.value = null
     }
@@ -216,19 +239,24 @@ class ChatEngine(
 
     /** Enter (or leave) a throwaway conversation. */
     fun toggleTemporaryChat() {
-        stopStreaming()
         if (_isTemporary.value) {
             discardTemp()
             _activeId.value = null
             return
         }
+        discardTemp()
         val now = System.currentTimeMillis()
         _tempChat.value = Conversation(id = TEMP_ID, createdAt = now, updatedAt = now)
         _isTemporary.value = true
         _activeId.value = TEMP_ID
     }
 
+    /**
+     * A temporary chat lives only in memory, so leaving it also cancels its
+     * run — there is nowhere for a finished answer to land.
+     */
     private fun discardTemp() {
+        if (_tempChat.value != null) cancelRun(TEMP_ID, keepPartial = false)
         _tempChat.value = null
         _isTemporary.value = false
     }
@@ -264,13 +292,14 @@ class ChatEngine(
     fun restore(id: String) = update(id) { it.copy(archived = false) }
 
     fun delete(id: String) {
+        cancelRun(id, keepPartial = false)
         _conversations.value = _conversations.value.filter { it.id != id }
         if (_activeId.value == id) _activeId.value = null
         scope.launch { store.delete(id) }
     }
 
     fun deleteAll() {
-        stopStreaming()
+        jobs.keys.toList().forEach { cancelRun(it, keepPartial = false) }
         discardTemp()
         _conversations.value = emptyList()
         _activeId.value = null
@@ -282,32 +311,63 @@ class ChatEngine(
         _conversations.value = store.loadAll()
     }
 
+    /** The stop button: cancels the active conversation's run only. */
     fun stopStreaming() {
-        sendJob?.cancel()
-        sendJob = null
-        // Keep whatever partial answer arrived.
-        val s = _stream.value
-        if (s is StreamState.Streaming && s.text.isNotBlank()) {
-            appendAssistant(s.text, s.reasoning, s.tools.toStored())
+        _activeId.value?.let { cancelRun(it, keepPartial = true) }
+    }
+
+    /** Stops every run, e.g. when the foreground service hits its time budget. */
+    fun stopAll() {
+        jobs.keys.toList().forEach { cancelRun(it, keepPartial = true) }
+    }
+
+    /** Cancels one conversation's run; [keepPartial] persists what streamed so far. */
+    private fun cancelRun(id: String, keepPartial: Boolean) {
+        jobs.remove(id)?.cancel()
+        val s = _streams.value[id]
+        if (keepPartial && s is StreamState.Streaming && s.text.isNotBlank()) {
+            appendAssistant(id, s.text, s.reasoning, s.tools.toStored())
         }
-        _stream.value = StreamState.Idle
-        _isRunning.value = false
+        setStream(id, StreamState.Idle)
+        _askForms.value -= id
+        askReplies.remove(id)
+        updateRunning()
+    }
+
+    private fun setStream(id: String, state: StreamState) {
+        _streams.value =
+            if (state is StreamState.Idle) _streams.value - id else _streams.value + (id to state)
+    }
+
+    private fun updateRunning() {
+        _isRunning.value = jobs.values.any { it.isActive }
     }
 
     fun dismissError() {
-        if (_stream.value is StreamState.Error) _stream.value = StreamState.Idle
+        if (_draftState.value is StreamState.Error) _draftState.value = StreamState.Idle
+        val id = _activeId.value ?: return
+        if (_streams.value[id] is StreamState.Error) setStream(id, StreamState.Idle)
+    }
+
+    /** A pre-flight failure, surfaced on the chat it belongs to (or the draft). */
+    private fun preflightError(message: String) {
+        val id = activeConversation?.id
+        if (id == null) _draftState.value = StreamState.Error(message)
+        else setStream(id, StreamState.Error(message))
     }
 
     /** The user submitted the ask-user form; the tool loop resumes with the answers. */
     fun submitAnswers(answers: List<AskAnswer>) {
-        _askForm.value = null
-        askReply?.complete(answers)
+        val id = _activeId.value ?: return
+        _askForms.value -= id
+        askReplies[id]?.complete(answers)
     }
 
     /** The user declined the form; the model gets an explicit decline, not silence. */
     fun declineQuestions() {
-        _askForm.value = null
-        askReply?.complete(null)
+        val id = _activeId.value ?: return
+        _askForms.value -= id
+        askReplies[id]?.complete(null)
     }
 
     /** True when any message in the active conversation carries images. */
@@ -322,25 +382,23 @@ class ChatEngine(
         thinking: ThinkingLevel,
     ) {
         val trimmed = text.trim()
-        if ((trimmed.isEmpty() && images.isEmpty() && files.isEmpty()) || sendJob?.isActive == true) return
+        if (trimmed.isEmpty() && images.isEmpty() && files.isEmpty()) return
+        // Only one turn per conversation; other chats can run concurrently.
+        if (activeConversation?.id?.let { jobs[it]?.isActive } == true) return
         if (model == null) {
-            _stream.value = StreamState.Error("Your plan has no models enabled yet.")
+            preflightError("Your plan has no models enabled yet.")
             return
         }
         // A chat with images must stay on a vision-capable model.
         val hasImages = images.isNotEmpty() || activeChatHasImages()
         if (hasImages && !model.vision) {
-            _stream.value = StreamState.Error(
-                "This chat contains images. Switch to a vision-capable model to continue.",
-            )
+            preflightError("This chat contains images. Switch to a vision-capable model to continue.")
             return
         }
         // Refuse to run into the context ceiling; the UI offers compact/new chat.
         val history = activeConversation?.messages ?: emptyList()
         if (ContextEstimator.isNearLimit(history, model.contextWindow)) {
-            _stream.value = StreamState.Error(
-                "This chat is near the model's context limit. Compact it or start a new chat.",
-            )
+            preflightError("This chat is near the model's context limit. Compact it or start a new chat.")
             return
         }
 
@@ -408,26 +466,42 @@ class ChatEngine(
      */
     fun compact(model: ModelInfo?) {
         val conv = activeConversation ?: return
-        if (model == null || conv.messages.isEmpty() || sendJob?.isActive == true) return
-        _stream.value = StreamState.Compacting
+        if (model == null || conv.messages.isEmpty() || jobs[conv.id]?.isActive == true) return
+        setStream(conv.id, StreamState.Compacting)
         beginRun()
-        sendJob = scope.launch {
+        launchRun(conv.id) {
             try {
                 performCompaction(conv, model)
-                _stream.value = StreamState.Idle
+                setStream(conv.id, StreamState.Idle)
                 _events.tryEmit(EngineEvent.RunFinished(conv.id, currentTitle(conv.id), failed = false))
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: UnauthorizedException) {
-                _stream.value = StreamState.Idle
+                setStream(conv.id, StreamState.Idle)
                 unauthorized.tryEmit(Unit)
             } catch (e: Exception) {
-                _stream.value = StreamState.Error("Compacting failed: ${friendlyError(e)}")
+                setStream(conv.id, StreamState.Error("Compacting failed: ${friendlyError(e)}"))
                 // The service's completion notification hangs off this event;
                 // without it a backgrounded failure would end silently.
                 _events.tryEmit(EngineEvent.RunFinished(conv.id, currentTitle(conv.id), failed = true))
-            } finally {
-                _isRunning.value = false
+            }
+        }
+    }
+
+    /**
+     * Registers and starts one conversation's turn. The job map entry drives
+     * the service lifetime ([isRunning]) and is cleaned up on completion,
+     * however the run ends.
+     */
+    private fun launchRun(conversationId: String, block: suspend CoroutineScope.() -> Unit) {
+        jobs.remove(conversationId)?.cancel()
+        val job = scope.launch(block = block)
+        jobs[conversationId] = job
+        updateRunning()
+        job.invokeOnCompletion {
+            scope.launch {
+                if (jobs[conversationId] === job) jobs.remove(conversationId)
+                updateRunning()
             }
         }
     }
@@ -451,7 +525,7 @@ class ChatEngine(
         api.chatStream(model.id, history, null).collect { event ->
             when (event) {
                 is ChatEvent.Text -> acc.append(event.delta)
-                is ChatEvent.RateLimited -> _stream.value = StreamState.RateLimited(event.retryAfterSeconds)
+                is ChatEvent.RateLimited -> setStream(conv.id, StreamState.RateLimited(event.retryAfterSeconds))
                 else -> Unit
             }
         }
@@ -483,7 +557,7 @@ class ChatEngine(
             ?: _conversations.value.firstOrNull { it.id == conversationId }
             ?: return
         if (!ContextEstimator.shouldAutoCompact(conv.messages, model.contextWindow)) return
-        _stream.value = StreamState.Compacting
+        setStream(conversationId, StreamState.Compacting)
         try {
             performCompaction(conv, model)
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -506,8 +580,8 @@ class ChatEngine(
 
     /** Drops the trailing assistant reply and re-runs the last user turn. */
     fun regenerate(model: ModelInfo?, thinking: ThinkingLevel) {
-        if (model == null || sendJob?.isActive == true) return
         val conv = activeConversation ?: return
+        if (model == null || jobs[conv.id]?.isActive == true) return
         val trimmedMsgs = conv.messages.dropLastWhile { it.role == "assistant" }
         if (trimmedMsgs.isEmpty()) return
         val updated = conv.copy(messages = trimmedMsgs, updatedAt = System.currentTimeMillis())
@@ -537,9 +611,9 @@ class ChatEngine(
         // Only reasoning-capable models accept reasoning_effort.
         val effort = if (model.reasoning) thinking.effort else null
 
-        _stream.value = StreamState.Thinking()
+        setStream(conv.id, StreamState.Thinking())
         beginRun()
-        sendJob = scope.launch {
+        launchRun(conv.id) {
             // The active skill's instructions and remembered facts ride along
             // in the system prompt; memory is re-read each turn, so facts
             // saved mid-turn appear from the next message on.
@@ -563,11 +637,14 @@ class ChatEngine(
 
             fun publish() {
                 lastPublish = System.currentTimeMillis()
-                _stream.value = if (textAcc.isEmpty()) {
-                    StreamState.Thinking(reasoningAcc.toString(), toolRuns.toList())
-                } else {
-                    StreamState.Streaming(textAcc.toString(), reasoningAcc.toString(), toolRuns.toList())
-                }
+                setStream(
+                    conv.id,
+                    if (textAcc.isEmpty()) {
+                        StreamState.Thinking(reasoningAcc.toString(), toolRuns.toList())
+                    } else {
+                        StreamState.Streaming(textAcc.toString(), reasoningAcc.toString(), toolRuns.toList())
+                    },
+                )
             }
 
             // Token deltas arrive faster than markdown can re-parse without
@@ -608,7 +685,7 @@ class ChatEngine(
                             }
                             is ChatEvent.ToolCall -> calls += event.call
                             is ChatEvent.RateLimited -> {
-                                _stream.value = StreamState.RateLimited(event.retryAfterSeconds)
+                                setStream(conv.id, StreamState.RateLimited(event.retryAfterSeconds))
                             }
                             is ChatEvent.Usage -> Unit
                             is ChatEvent.Done -> Unit
@@ -647,7 +724,7 @@ class ChatEngine(
                             publish()
                             val meta = tools.sensitiveMeta(call.name, call.arguments)
                             val (result, doneLabel) = prefetched[i]?.await() ?: when {
-                                call.name == ToolRegistry.ASK_USER -> executeAskUser(call)
+                                call.name == ToolRegistry.ASK_USER -> executeAskUser(conv.id, call)
                                 call.name == LOAD_SKILL -> executeLoadSkill(call)
                                 call.name == CREATE_SKILL -> executeCreateSkill(call)
                                 mcp.isMcpTool(call.name) -> executeMcp(call)
@@ -666,27 +743,25 @@ class ChatEngine(
                         }
                     }
                 }
-                appendAssistant(textAcc.toString(), reasoningAcc.toString(), toolRuns.toStored())
+                appendAssistant(conv.id, textAcc.toString(), reasoningAcc.toString(), toolRuns.toStored())
                 // A turn that grew the chat past the auto-compact threshold is
                 // folded into a summary now, before the user sends again.
                 maybeAutoCompact(conv.id, model)
-                _stream.value = StreamState.Idle
+                setStream(conv.id, StreamState.Idle)
                 _events.tryEmit(EngineEvent.RunFinished(conv.id, currentTitle(conv.id), failed = false))
             } catch (e: kotlinx.coroutines.CancellationException) {
-                // A stopped turn is not an error; stopStreaming already kept
+                // A stopped turn is not an error; cancelRun already kept
                 // the partial answer.
                 throw e
             } catch (e: UnauthorizedException) {
-                _stream.value = StreamState.Idle
+                setStream(conv.id, StreamState.Idle)
                 unauthorized.tryEmit(Unit)
             } catch (e: Exception) {
                 if (textAcc.isNotBlank()) {
-                    appendAssistant(textAcc.toString(), reasoningAcc.toString(), toolRuns.toStored())
+                    appendAssistant(conv.id, textAcc.toString(), reasoningAcc.toString(), toolRuns.toStored())
                 }
-                _stream.value = StreamState.Error(friendlyError(e))
+                setStream(conv.id, StreamState.Error(friendlyError(e)))
                 _events.tryEmit(EngineEvent.RunFinished(conv.id, currentTitle(conv.id), failed = true))
-            } finally {
-                _isRunning.value = false
             }
         }
     }
@@ -784,7 +859,7 @@ class ChatEngine(
      * tool result plus the label persisted in the transcript (the answers
      * themselves, so history shows what was decided).
      */
-    private suspend fun executeAskUser(call: ToolCallData): Pair<ToolResult, String> {
+    private suspend fun executeAskUser(conversationId: String, call: ToolCallData): Pair<ToolResult, String> {
         val form = when (val parsed = AskUserForms.parse(call.arguments)) {
             is AskParseResult.Invalid ->
                 return ToolResult("error: ask-user: ${parsed.message}", isError = true) to
@@ -792,8 +867,8 @@ class ChatEngine(
             is AskParseResult.Ok -> parsed.form
         }
         val reply = CompletableDeferred<List<AskAnswer>?>()
-        askReply = reply
-        _askForm.value = form
+        askReplies[conversationId] = reply
+        _askForms.value += (conversationId to form)
         _events.tryEmit(EngineEvent.NeedsInput("Spettro has a question for you"))
         try {
             val answers = reply.await()
@@ -804,8 +879,8 @@ class ChatEngine(
                     "You declined to answer"
             return ToolResult(formatted) to formatted
         } finally {
-            _askForm.value = null
-            askReply = null
+            _askForms.value -= conversationId
+            if (askReplies[conversationId] === reply) askReplies.remove(conversationId)
         }
     }
 
@@ -815,8 +890,7 @@ class ChatEngine(
             StoredToolRun(it.name, it.label, ok = !it.failed, output = it.output.take(20_000))
         }
 
-    private fun appendAssistant(text: String, reasoning: String, tools: List<StoredToolRun> = emptyList()) {
-        val id = _activeId.value ?: return
+    private fun appendAssistant(id: String, text: String, reasoning: String, tools: List<StoredToolRun> = emptyList()) {
         if (text.isBlank() && reasoning.isBlank()) return
         update(id) {
             it.copy(

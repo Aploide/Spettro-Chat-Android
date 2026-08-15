@@ -47,6 +47,7 @@ import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.markdownDimens
+import com.mikepenz.markdown.model.rememberMarkdownState
 import to.eyed.spettro.chat.ui.components.Hairline
 import to.eyed.spettro.chat.ui.components.copyToClipboard
 import to.eyed.spettro.chat.ui.theme.Ink
@@ -78,8 +79,18 @@ fun MarkdownBody(text: String, modifier: Modifier = Modifier) {
 @Composable
 private fun MarkdownChunkView(chunk: String) {
     val body = MaterialTheme.typography.bodyLarge.copy(color = Ink.I100)
-    Markdown(
+    // While tokens stream in, the growing chunk re-parses on every publish.
+    // immediate parses the first composition synchronously (no blank frame)
+    // and retainState keeps the previous tree on screen during async
+    // re-parses — without both, each update flashes the default "loading"
+    // placeholder, which reads as violent flicker at streaming rate.
+    val markdownState = rememberMarkdownState(
         content = chunk,
+        retainState = true,
+        immediate = true,
+    )
+    Markdown(
+        markdownState = markdownState,
         colors = markdownColor(
             text = Ink.I100,
             codeBackground = Ink.I900,

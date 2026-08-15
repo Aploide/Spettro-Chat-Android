@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import to.eyed.spettro.chat.data.AppPrefs
 
 /** A pending in-app approval for a sensitive tool or an MCP server. */
@@ -43,14 +45,17 @@ class ConsentGate(private val prefs: AppPrefs) {
     suspend fun hasStandingGrant(consentKey: String): Boolean =
         consentKey in prefs.consentAlways()
 
+    /** Concurrent chats may ask at once; cards are shown one at a time. */
+    private val mutex = Mutex()
+
     /** Engine-side: true when the user allowed the call (once or always). */
-    suspend fun require(request: ConsentRequest): Boolean {
-        if (request.consentKey in prefs.consentAlways()) return true
+    suspend fun require(request: ConsentRequest): Boolean = mutex.withLock {
+        if (request.consentKey in prefs.consentAlways()) return@withLock true
         val deferred = CompletableDeferred<ConsentDecision>()
         reply = deferred
         _pending.value = request
         try {
-            return when (deferred.await()) {
+            when (deferred.await()) {
                 ConsentDecision.AllowOnce -> true
                 ConsentDecision.AlwaysAllow -> {
                     prefs.grantConsentAlways(request.consentKey)
