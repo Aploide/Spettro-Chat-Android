@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import to.eyed.spettro.chat.BuildConfig
 import to.eyed.spettro.chat.data.api.Account
 import to.eyed.spettro.chat.ui.components.GlassButton
 import to.eyed.spettro.chat.ui.components.GlassToggle
@@ -291,6 +292,15 @@ fun SettingsSheet(
                         }
                     }
                 }
+
+                Text(
+                    "v${BuildConfig.VERSION_NAME}",
+                    fontSize = 11.sp,
+                    color = Ink.I500,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 24.dp, bottom = 8.dp),
+                )
             }
             Spacer(Modifier.height(24.dp))
         }
