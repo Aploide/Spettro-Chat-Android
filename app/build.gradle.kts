@@ -64,6 +64,13 @@ android {
 }
 
 dependencies {
+    constraints {
+        // pdfbox-android pins BouncyCastle 1.72, which has open CVEs (GOST CTR
+        // keystream reuse, LDAP injection, timing channel). Force the patched line.
+        implementation("org.bouncycastle:bcprov-jdk15to18:1.85.2")
+        implementation("org.bouncycastle:bcpkix-jdk15to18:1.85")
+        implementation("org.bouncycastle:bcutil-jdk15to18:1.85.1")
+    }
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
