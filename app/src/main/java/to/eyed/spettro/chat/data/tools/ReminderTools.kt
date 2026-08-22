@@ -77,7 +77,11 @@ internal object Reminders {
         PendingIntent.getBroadcast(
             context,
             reminder.id,
+            // setPackage on top of the explicit component: keeps the intent
+            // provably non-implicit for static analysis (CodeQL misses the
+            // Kotlin ::class.java constructor argument).
             Intent(context, ReminderReceiver::class.java)
+                .setPackage(context.packageName)
                 .putExtra(EXTRA_ID, reminder.id)
                 .putExtra(EXTRA_MESSAGE, reminder.message),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,

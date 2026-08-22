@@ -53,7 +53,12 @@ object AgentNotifications {
     fun contentIntent(context: Context): PendingIntent = PendingIntent.getActivity(
         context,
         0,
-        Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        // setPackage on top of the explicit component: keeps the intent
+        // provably non-implicit for static analysis (CodeQL misses the
+        // Kotlin ::class.java constructor argument).
+        Intent(context, MainActivity::class.java)
+            .setPackage(context.packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
