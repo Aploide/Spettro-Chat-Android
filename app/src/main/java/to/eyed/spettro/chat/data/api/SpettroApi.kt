@@ -26,6 +26,19 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
+ * Wire parser for the backend's OpenAI-compatible responses.
+ * coerceInputValues is required: some upstream-routed models (Kimi K3,
+ * SuperSmart, SuperFast) emit `"tool_calls": null` in every stream delta
+ * whenever tools are offered, and without coercion that null makes the
+ * whole chunk fail to decode — silently dropping every token of the reply.
+ */
+internal val wireJson = Json {
+    ignoreUnknownKeys = true
+    encodeDefaults = false
+    coerceInputValues = true
+}
+
+/**
  * Client for the Spettro backend, authenticated with an ep_ API key:
  *  - GET  /v1/models           — models available on the user's plan
  *  - GET  /v1/account          — plan, status, and credit usage
@@ -45,7 +58,7 @@ class SpettroApi(
         const val DEFAULT_RATE_LIMIT_RETRY_S = 7
     }
 
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
+    private val json = wireJson
     private val jsonMedia = "application/json".toMediaType()
 
     private val client = OkHttpClient.Builder()
